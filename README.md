@@ -1,6 +1,8 @@
 
 <img width="1200" alt="cb-big2" src="https://github.com/user-attachments/assets/bd8c5f03-e91d-4ee5-b680-57355da204d1" />
 
+> 🚀 **Serverless deployment:** the RunPod serverless worker (voice cloning, long-text chunking, model caching, CUDA-correct Docker image) now lives in its own repo: [Yasirrazaa/chatterbox-runpod-serverless](https://github.com/Yasirrazaa/chatterbox-runpod-serverless).
+
 # Chatterbox TTS
 
 [![Alt Text](https://img.shields.io/badge/listen-demo_samples-blue)](https://resemble-ai.github.io/chatterbox_demopage/)

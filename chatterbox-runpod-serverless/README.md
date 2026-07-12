@@ -1,211 +1,206 @@
-# ChatterboxTTS Serverless Worker
+# Chatterbox TTS — RunPod Serverless Worker
 
-A RunPod serverless worker for ChatterboxTTS text-to-speech generation. This worker processes text input and generates high-quality speech audio using the ChatterboxTTS model with support for voice cloning and long text processing.
+> A production-ready **serverless deployment** of [Resemble AI's Chatterbox TTS](https://github.com/resemble-ai/chatterbox) on [RunPod](https://runpod.io). This repo turns the open-source model into a scalable, GPU-accelerated text-to-speech API with voice cloning, automatic long-text chunking, and robust error handling — deployable in minutes.
+
+[![RunPod](https://img.shields.io/badge/Deploy-RunPod-6f2cff?logo=runpod&logoColor=white)](https://runpod.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org)
+
+---
+
+## Why this exists
+
+Chatterbox ships as a Python library / Gradio demo. To use it as a **backend service** (e.g. for an AI agent, a video pipeline, or a voice feature) you need:
+
+- a model that loads **once** and is reused across requests (not re-initialized per call),
+- graceful handling of **long paragraphs** (TTS models choke on very long inputs),
+- **voice cloning** from an uploaded sample, and
+- clean, validated JSON I/O with sensible error messages.
+
+This worker wraps Chatterbox in a RunPod serverless handler that does exactly that, packaged in a CUDA-correct Docker image.
+
+---
 
 ## Features
 
-- **Text-to-Speech Generation**: Convert text to natural-sounding speech
-- **Voice Cloning**: Use audio prompts for voice cloning/style transfer
-- **Long Text Support**: Automatic chunking for long text processing
-- **Configurable Parameters**: Control voice characteristics with exaggeration, cfg_weight, and temperature
-- **Robust Error Handling**: Comprehensive error handling and validation
-- **GPU Acceleration**: Optimized for CUDA-enabled RunPod workers
-- **Multiple Output Formats**: Support for WAV, MP3, and other audio formats
+| Feature | Notes |
+|---------|-------|
+| **Serverless / autoscaling** | Scales to zero when idle; scales up on demand on RunPod. |
+| **Model caching** | Model is loaded once at worker start and reused — no per-request reload. |
+| **Long-text chunking** | Splits input on sentence boundaries (NLTK) and stitches audio with configurable inter-chunk silence. |
+| **Voice cloning** | Pass a base64 WAV sample to clone a voice (`audio_prompt_base64`). |
+| **Controllable output** | `exaggeration`, `cfg_weight`, `temperature` exposed as API params. |
+| **Input validation** | Range-checked params and clear `validation_error` responses. |
+| **Robust error handling** | `processing_error` / `system_error` types with traces in logs. |
+| **GPU-optimized image** | CUDA 12.4 + cuDNN, force-reinstalls the CUDA torch wheel to avoid CPU-only installs. |
+| **Base64 audio** | Returns audio inline (WAV by default) so it works behind any API gateway. |
 
-## Best Parameters (for most prompts)
-- **temperature**: 0.8
-- **cfg_weight**: 0.5
-- **exaggeration**: 0.5
-- **max_chars_per_chunk**: 550
-- **inter_chunk_silence_ms**: 100
+---
 
+## Architecture
 
-## API Parameters
+```mermaid
+flowchart LR
+    Client([Client / API call]) -->|JSON input| RP[(RunPod Serverless Endpoint)]
+    RP --> H[rp_handler.handler]
+    H --> V[validate_input\nrange + required checks]
+    V --> M{Model cached?}
+    M -- no --> L[initialize_model\nload ChatterboxTTS on CUDA]
+    M -- yes --> C
+    L --> C[split_text_into_chunks\nNLTK sentence tokenize]
+    C --> G[generate_audio_chunk\nper-chunk TTS]
+    G --> A[concat + inter-chunk silence]
+    A --> E[audio_tensor_to_base64]
+    E --> R[(JSON response:\naudio_base64 + metadata)]
+```
 
-The serverless worker accepts the following parameters:
+**Request lifecycle (`rp_handler.py`):**
+1. `handler()` receives a RunPod job and extracts `job['input']`.
+2. `validate_input()` enforces required fields and parameter ranges.
+3. `initialize_model()` loads ChatterboxTTS **once** (cuda if available) and is cached in a global — subsequent calls skip reload.
+4. `split_text_into_chunks()` breaks long text on sentence boundaries using NLTK.
+5. `generate_audio_chunk()` renders each chunk; chunks are concatenated with `inter_chunk_silence_ms` of silence.
+6. `audio_tensor_to_base64()` encodes the final tensor to WAV base64 and returns it with rich `metadata`.
+
+---
+
+## API
+
+### Parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `text` | string | Yes | - | Text to convert to speech |
-| `audio_prompt_base64` | string | No | null | Base64-encoded audio file for voice cloning |
-| `temperature` | float | No | 0.8 | Controls randomness in generation (0.0-1.0) |
-| `cfg_weight` | float | No | 0.5 | Classifier-free guidance weight |
-| `exaggeration` | float | No | 0.5 | Controls expression emphasis |
-| `max_chars_per_chunk` | integer | No | 300 | Maximum characters per audio chunk |
-| `inter_chunk_silence_ms` | integer | No | 350 | Silence between chunks in milliseconds |
+| `text` | string | ✅ | — | Text to synthesize. |
+| `audio_prompt_base64` | string | ❌ | `null` | Base64 WAV for voice cloning. |
+| `temperature` | float | ❌ | `0.8` | Sampling randomness (0.0–2.0). |
+| `cfg_weight` | float | ❌ | `0.5` | Classifier-free guidance (0.0–1.0). |
+| `exaggeration` | float | ❌ | `0.5` | Emotion/expression emphasis (0.0–1.0). |
+| `max_chars_per_chunk` | int | ❌ | `300` | Max chars per chunk (≥ 50). |
+| `inter_chunk_silence_ms` | int | ❌ | `350` | Silence inserted between chunks (≥ 0). |
+| `output_format` | string | ❌ | `wav` | Audio format of the returned blob. |
 
-## API Usage Examples
+> **Tuning tip:** the defaults above work for most prompts. For expressive/dramatic speech, try `exaggeration≈0.7`, `cfg_weight≈0.3`. For long paragraphs, raise `max_chars_per_chunk` (e.g. `550`) and lower `inter_chunk_silence_ms` (e.g. `100`) to keep pacing natural.
 
-### Basic Text-to-Speech
+### Examples
 
-```json
-{
-    "input": {
-        "text": "Hello world! This is a test of the ChatterboxTTS system.",
-        "temperature": 0.8,
-        "cfg_weight": 0.5,
-        "exaggeration": 0.5
-    }
-}
-```
-
-### Voice Cloning with Audio Prompt
+<details><summary><b>Basic TTS</b></summary>
 
 ```json
 {
-    "input": {
-        "text": "Clone this voice and speak this text with the same characteristics.",
-        "audio_prompt_base64": "UklGRi4EAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQgEAAAA...",
-        "temperature": 0.7,
-        "cfg_weight": 0.6,
-        "exaggeration": 0.4
-    }
+  "input": {
+    "text": "Hello world! This is a test of the ChatterboxTTS system.",
+    "temperature": 0.8,
+    "cfg_weight": 0.5,
+    "exaggeration": 0.5
+  }
 }
 ```
+</details>
 
-### Long Text with Custom Chunking
+<details><summary><b>Voice cloning</b></summary>
 
 ```json
 {
-    "input": {
-        "text": "This is a very long text that will be automatically split into smaller chunks for processing. Each chunk will be processed separately and then combined into a single audio file.",
-        "max_chars_per_chunk": 150,
-        "inter_chunk_silence_ms": 500,
-        "temperature": 0.9
-    }
+  "input": {
+    "text": "Clone this voice and speak this text with the same characteristics.",
+    "audio_prompt_base64": "UklGRi4EAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQgEAAAA...",
+    "temperature": 0.7,
+    "cfg_weight": 0.6,
+    "exaggeration": 0.4
+  }
 }
 ```
+</details>
 
-### Custom Audio Format
+<details><summary><b>Long text (chunked)</b></summary>
 
 ```json
 {
-    "input": {
-        "text": "Generate audio in a specific format.",
-        "output_format": "mp3",
-        "temperature": 0.8
-    }
+  "input": {
+    "text": "This is a very long text that will be automatically split into smaller chunks for processing. Each chunk will be processed separately and then combined into a single audio file.",
+    "max_chars_per_chunk": 150,
+    "inter_chunk_silence_ms": 500,
+    "temperature": 0.9
+  }
 }
 ```
+</details>
 
-## Response Format
-
-### Success Response
+### Response (success)
 
 ```json
 {
-    "success": true,
-    "audio_base64": "UklGRi4EAABXQVZFZm10...",
-    "metadata": {
-        "duration_seconds": 5.2,
-        "sample_rate": 44100,
-        "format": "wav",
-        "chunks_generated": 3,
-        "total_characters": 156,
-        "voice_cloning_used": false
-    },
-    "processing_time": 2.34
+  "status": "success",
+  "audio_base64": "UklGRi4EAABXQVZFZm10...",
+  "metadata": {
+    "duration_seconds": 5.2,
+    "sample_rate": 44100,
+    "num_chunks": 3,
+    "processing_time_seconds": 2.34,
+    "text_length": 156,
+    "audio_shape": [1, 229824]
+  }
 }
 ```
 
-### Error Response
+### Response (error)
 
 ```json
 {
-    "success": false,
-    "error": "Error message describing what went wrong",
-    "error_type": "validation_error|processing_error|system_error",
-    "processing_time": 0.12
+  "status": "error",
+  "error": "Temperature must be between 0.0 and 2.0",
+  "metadata": { "processing_time_seconds": 0.12 }
 }
 ```
 
-## Audio Prompt Guidelines
+---
 
-When using voice cloning with `audio_prompt_base64`:
-
-1. **Audio Format**: WAV format recommended for best results
-2. **Duration**: 5-10 seconds of clear speech
-3. **Quality**: High-quality recording with minimal background noise
-4. **Encoding**: Use base64 encoding of the raw audio file
-5. **Sample Rate**: 44.1kHz or 22kHz recommended
-
-**Example of preparing audio prompt:**
-
-```python
-import base64
-
-# Read your audio file
-with open("voice_sample.wav", "rb") as audio_file:
-    audio_data = audio_file.read()
-    audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-
-# Use in API request
-request_data = {
-    "input": {
-        "text": "Your text here",
-        "audio_prompt_base64": audio_base64
-    }
-}
-```
-
-## Local Development
+## Local development
 
 ### Prerequisites
-
 - Python 3.10+
-- CUDA-compatible GPU (recommended)
-- Docker (for containerization)
+- CUDA GPU **recommended** (CPU works but is slow)
+- Docker (for building the image)
+- A [RunPod](https://runpod.io) account + API key for deployment
 
-### Setup
+### 1. Install dependencies
+```bash
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt   # includes chatterbox-tts==0.1.1
+```
 
-1. Clone this repository
-2. Create a virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+### 2. Run a local generation demo
+`test.py` is a standalone demo of the same generation logic (long-text chunking + optional voice clone). It requires a GPU and `chatterbox-tts` installed; edit `your_long_text` / `AUDIO_PROMPT_PATH` at the bottom of the file as needed, then:
+```bash
+python test.py
+```
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+The `test_input*.json` files are **example request payloads** for the RunPod endpoint (basic, long-text, voice-clone). A captured real response is in `outputs/response.json` (sample: a short sentence synthesized in ~23.5 s execution time on a GPU worker, incl. one-time model warm-up).
 
-4. Install ChatterboxTTS (replace with actual installation method):
-   ```bash
-   # Example - adjust based on actual ChatterboxTTS installation
-   pip install chatterbox-tts
-   # OR
-   git clone https://github.com/your-repo/chatterbox-tts.git
-   cd chatterbox-tts
-   pip install -e .
-   ```
+> To exercise the handler itself locally, wrap `handler()` with a mock job dict, or use RunPod's local worker (`runpod` CLI) pointed at `rp_handler.py`.
 
+---
 
-## Deployment
+## Deployment (RunPod Serverless)
 
-### Option 1: Deploy via GitHub Integration (Recommended)
+### 1. Build & push the image
+The `Dockerfile` builds on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`, installs the CUDA torch wheel explicitly (see *Lessons learned*), then copies `rp_handler.py`.
 
-1. Fork this repository
-2. Connect your GitHub account to RunPod Console
-3. Create a new Serverless Endpoint
-4. Select "GitHub Repo" as source
-5. Choose this repository, branch and Dockerfile
-6. Configure compute resources (GPU recommended)
-7. Deploy
+```bash
+docker build -t your-registry/chatterbox-serverless:latest -f Dockerfile ..
+docker push your-registry/chatterbox-serverless:latest
+```
 
+> The build context is the parent directory (`..`) because the `Dockerfile` `COPY`s from `chatterbox-runpod-serverless/`.
 
-## Configuration
+### 2. Create the endpoint
+1. In the RunPod console → **Serverless** → **New Endpoint**.
+2. Choose **Custom Container** and point it at your pushed image.
+3. Select a GPU (see sizing below).
+4. Deploy. RunPod will pull the image, run the container, and call `rp_handler.py` on each job.
 
-### GPU Requirements
-
-- **Minimum**: 16GB VRAM (RTX 4080/A4000)             # works well for non concurent on single worker
-- **Recommended**: 24GB+ VRAM (RTX 4090/A5000/A6000)  # for concurent on single worker
-
-
-## API Usage
-
-### cURL Example
-
+### 3. Call it
 ```bash
 curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -216,141 +211,88 @@ curl -X POST "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync" \
       "temperature": 0.8,
       "exaggeration": 0.5
     }
-  '
+  }'
 ```
 
-### Python SDK Example
+<details><summary><b>Python SDK</b></summary>
 
 ```python
-import runpod
+import runpod, base64
 
 runpod.api_key = "YOUR_API_KEY"
-
 endpoint = runpod.Endpoint("YOUR_ENDPOINT_ID")
 
-# Basic usage
-result = endpoint.run_sync({
-    "input": {
-        "text": "Welcome to ChatterboxTTS!",
-        "temperature": 0.7,
-        "cfg_weight": 0.6
-    }
-})
-
+result = endpoint.run_sync({"input": {"text": "Welcome to ChatterboxTTS!", "temperature": 0.7}})
 print(result)
 
-# Voice cloning example
-import base64
-
+# with voice cloning
 with open("voice_sample.wav", "rb") as f:
-    audio_base64 = base64.b64encode(f.read()).decode('utf-8')
+    audio_b64 = base64.b64encode(f.read()).decode()
 
 result = endpoint.run_sync({
-    "input": {
-        "text": "This will sound like the voice sample.",
-        "audio_prompt_base64": audio_base64,
-        "temperature": 0.8
-    }
+    "input": {"text": "This will sound like the voice sample.", "audio_prompt_base64": audio_b64}
 })
 ```
+</details>
 
-### JavaScript/Node.js Example
+<details><summary><b>JavaScript / Node.js</b></summary>
 
 ```javascript
 const axios = require('axios');
 
 const runPodRequest = async () => {
-    try {
-        const response = await axios.post(
-            'https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync',
-            {
-                input: {
-                    text: "Hello from JavaScript!",
-                    temperature: 0.8,
-                    cfg_weight: 0.5
-                }
-            },
-            {
-                headers: {
-                    'Authorization': 'Bearer YOUR_API_KEY',
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-        
-        console.log(response.data);
-    } catch (error) {
-        console.error('Error:', error.response.data);
-    }
+  const { data } = await axios.post(
+    'https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync',
+    { input: { text: "Hello from JavaScript!", temperature: 0.8, cfg_weight: 0.5 } },
+    { headers: { Authorization: 'Bearer YOUR_API_KEY', 'Content-Type': 'application/json' } }
+  );
+  console.log(data);
 };
-
 runPodRequest();
 ```
+</details>
 
-## Monitoring and Troubleshooting
+### GPU sizing
+| Tier | VRAM | Example GPU | Use case |
+|------|------|-------------|----------|
+| Minimum | 16 GB | RTX 4080 / A4000 | Single non-concurrent worker |
+| Recommended | 24 GB+ | RTX 4090 / A5000 / A6000 | Concurrent requests on one worker |
 
-### Logs
+---
 
-Monitor worker logs in the RunPod Console under Endpoint Details > Logs tab.
+## Lessons learned (real fixes shipped here)
 
-### Common Issues
+- **CUDA torch wheel:** `pip install chatterbox-tts` pulls `torch==2.6.0`/`torchaudio==2.6.0` from PyPI, which are **CPU-only**. The `Dockerfile` force-reinstalls the CUDA build (`+cu124`) *after* installing the library so the GPU is actually used. Without this, workers fail with "CUDA not available".
+- **Long-text failure mode:** feeding a whole paragraph to TTS causes truncation/instability. Sentence-level chunking + stitched silence solved it.
+- **Tensor shape safety:** generation can return `[N]` or `[1, N]`; the worker normalizes to `[1, N]` before concatenation to avoid silent `torch.cat` errors.
+- **Model caching:** loading in `__main__` before `runpod.serverless.start(...)` means the weights are resident for every job — the single biggest latency win.
 
-1. **Out of Memory**: 
-   - Reduce `max_chars_per_chunk` parameter
-   - Use larger GPU configuration
-   - Check for memory leaks in model loading
+---
 
-2. **Model Loading Timeout**: 
-   - Increase worker timeout settings
-   - Ensure model files are properly cached
-   - Check internet connectivity for model downloads
-
-3. **Audio Quality Issues**: 
-   - Adjust `temperature` (lower = more consistent)
-   - Tune `cfg_weight` and `exaggeration` parameters
-   - Ensure audio prompts are high quality
-
-4. **Base64 Encoding Issues**:
-   - Verify audio file format is supported
-   - Check base64 encoding is properly formatted
-   - Ensure audio file size is reasonable
-5. **Cuda not avaiable error on Runpod**: (Already fixed in Dockerfile)
-   - when installing chatterbox-tts, pip installs chatterbox-tts including its specified torch==2.6.0 and torchaudio==2.6.0 (which will be CPU-only from PyPI if not constrained).
-   - **Solution**: Running `pip install --force-reinstall torch==2.6.0+cu124 torchaudio==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124` after installing chatterbox-tts overwrites the previously installed torch and torchaudio with the CUDA-enabled versions from the PyTorch wheel index. The versions (2.6.0) match, but the build (+cu124) is different.
-
-### Performance Optimization
-
-- Use GPU workers for faster inference
-- Optimize chunk size based on text length and GPU memory
-- Enable model caching between requests
-- Use appropriate timeout settings
-- Preload models during worker initialization
-
-## File Structure
+## File structure
 
 ```
-chatterbox-tts-serverless/
-├── rp_handler.py              # Main handler function
-├── requirements.txt           # Python dependencies
-├── test.py             # experiment script
-├── test_input.json           # Basic test input
-├── test_input_long.json      # Long text test input
-├── test_input_voice_clone.json # Voice cloning test input
-└── README.md                 # This file
+chatterbox-runpod-serverless/
+├── rp_handler.py                 # Serverless worker (validation, chunking, TTS, encoding)
+├── Dockerfile                    # CUDA 12.4 image with torch CUDA-wheel fix
+├── requirements.txt              # runpod, nltk, chatterbox-tts==0.1.1
+├── test.py                       # Local harness for the handler
+├── test_input.json               # Basic TTS test
+├── test_input_long.json          # Long-text chunking test
+├── test_input_voice_clone.json   # Voice-cloning test
+├── outputs/
+│   └── response.json             # Sample captured response
+└── README.md                     # This file
 ```
+
+---
+
+## Future work
+- Concurrent request handling on a single worker (batched generation).
+- Streaming responses (`return_aggregate_stream`) for lower time-to-first-audio.
+- Optional direct object-storage return (S3/GCS) for very long audio instead of base64.
+
+---
 
 ## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-- Check the [RunPod Documentation](https://docs.runpod.io/)
-- Open an issue in this repository
-- Contact RunPod support for infrastructure issues
-- Review ChatterboxTTS documentation for model-specific questions
-
-# Future Plans
-- Concurrent requests on Single Worker
-- Streaming Responses
+MIT — inherits Chatterbox's MIT model license. See the parent repo `LICENSE`.

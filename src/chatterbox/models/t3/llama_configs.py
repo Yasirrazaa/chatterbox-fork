@@ -65,6 +65,7 @@ GPT2_MEDIUM_CONFIG = {
     }
   },
   "vocab_size": 50276,
+  "torch_dtype": "bfloat16"
 }
 
 LLAMA_CONFIGS = {

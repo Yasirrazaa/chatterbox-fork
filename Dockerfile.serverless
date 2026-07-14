@@ -1,0 +1,66 @@
+# Chatterbox TTS — RunPod serverless worker image
+# Build context is the repo root (`.`):
+#   docker build -t chatterbox-serverless:latest .
+
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+# ---- System dependencies ----
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    git \
+    curl \
+    wget \
+    ffmpeg \
+    libsndfile1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3.10 /usr/bin/python \
+    && python -m pip install --upgrade pip
+
+# ---- uv (fast package manager) ----
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+# ---- Create venv ----
+RUN uv venv --python 3.10 /app/.venv
+
+# ---- Install CUDA torch BEFORE sync ----
+# chatterbox-tts pins torch==2.6.0 (CPU PyPI wheel). Pre-installing the
+# +cu124 build here means `uv sync` sees torch already satisfied and skips
+# the ~1.5GB CUDA download. The GPU is then actually used.
+RUN /app/.venv/bin/python -m pip install \
+    torch==2.6.0+cu124 torchaudio==2.6.0+cu124 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# ---- Install project + deps from pyproject.toml ----
+COPY pyproject.toml /app/pyproject.toml
+COPY src /app/src
+COPY rp_handler.py /app/rp_handler.py
+COPY local_test.py /app/local_test.py
+COPY benchmark.py /app/benchmark.py
+
+RUN uv sync --python /app/.venv
+
+# ---- Runtime env ----
+ENV PYTHONPATH=/app/src:/app
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV CUDA_VISIBLE_DEVICES=all
+
+RUN mkdir -p /tmp /app/outputs
+
+# ---- Health check ----
+HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=3 \
+    CMD /app/.venv/bin/python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)"
+
+# ---- Entrypoint ----
+CMD ["/app/.venv/bin/python", "-u", "rp_handler.py"]

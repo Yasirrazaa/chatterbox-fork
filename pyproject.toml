@@ -28,7 +28,22 @@ dependencies = [
     "pykakasi==2.3.0",
     "gradio==6.8.0",
     "pyloudnorm",
-    "omegaconf"
+    "omegaconf",
+    "soundfile",
+    "num2words>=0.5.14",
+    "runpod>=1.7.7",
+    "nltk>=3.9.1"
+]
+
+[project.optional-dependencies]
+# Optional: denoising with RNNoise
+denoise = [
+    "pyrnnoise>=0.3.8",
+]
+# Optional: Whisper validation
+validate = [
+    "faster-whisper>=1.1.0",
+    "openai-whisper>=20240930",
 ]
 
 [project.urls]

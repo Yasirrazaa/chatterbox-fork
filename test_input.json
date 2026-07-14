@@ -1,0 +1,20 @@
+{
+    "input": {
+        "model_config": {
+            "model_type": "multilingual",
+            "language": "en",
+            "normalize_text": true,
+            "sentence_split": true,
+            "inter_sentence_silence_ms": 100
+        },
+        "text": "Hello world! This is a test of the ChatterboxTTS serverless worker. The system will convert this text into high-quality speech audio. It supports 23 languages and voice cloning.",
+        "language_id": "en",
+        "temperature": 0.8,
+        "cfg_weight": 0.5,
+        "exaggeration": 0.5,
+        "repetition_penalty": 1.2,
+        "min_p": 0.05,
+        "top_p": 1.0,
+        "output_format": "wav"
+    }
+}

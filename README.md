@@ -1,6 +1,6 @@
 ![Chatterbox Multilingual Image](./Chatterbox-Multilingual.png)
 
-> 🚀 **Serverless deployment:** the RunPod serverless worker (voice cloning, long-text chunking, model caching, CUDA-correct Docker image) now lives in its own repo: [Yasirrazaa/chatterbox-runpod-serverless](https://github.com/Yasirrazaa/chatterbox-runpod-serverless).
+> 🚀 **Unified Repository:** This repository is now a fully-featured monorepo! It contains the core TTS models (with ultra-fast bucketed CUDA graph optimizations) and is natively usable both **locally** and deployed on **RunPod as a Serverless Endpoint**. It includes built-in long-text chunking, Whisper-based validation, and memory-efficient model caching.
 
 # Chatterbox TTS
 
@@ -116,7 +116,38 @@ AUDIO_PROMPT_PATH = "YOUR_FILE.wav"
 wav = model.generate(text, audio_prompt_path=AUDIO_PROMPT_PATH)
 ta.save("test-2.wav", wav, model.sr)
 ```
-See `example_tts.py` and `example_vc.py` for more examples.
+See `examples/example_tts.py` and `examples/example_vc.py` for more simple examples.
+
+##### High-Performance Serverless Pipeline
+
+The repository includes a highly robust pipeline wrapper, built for deployment as a RunPod Serverless worker but also perfect for advanced local inference. It integrates text pre-processing, sentence-chunking, and an optional **multi-candidate Whisper validation loop** that eliminates hallucinations by picking the lowest Word-Error-Rate chunk natively!
+
+```python
+from chatterbox_serverless.inference import ChatterboxInference
+
+# Loads the model with fast bucketed CUDA graphs
+model = ChatterboxInference.from_pretrained(model_type="multilingual", device="cuda")
+
+# Generate with text pre-processing, chunking, and validation (picks best of 3 candidates)
+wav = model.generate_fast(
+    "Wow! That's incredibly fast.",
+    language_id="en",
+    normalize_text=True,
+    sentence_split=True,
+    num_candidates=3,          # Generates 3 candidates per sentence
+    # validate=True is implicit when num_candidates > 1 if optional validate extra is installed
+)
+```
+
+**To run the RunPod Serverless endpoint:**
+```shell
+# Ensure you have the required serverless dependencies:
+pip install ".[validate]"
+
+# Start the RunPod handler locally
+python rp_handler.py
+```
+You can test the endpoint using the scripts in `scripts/local_test.py` and inputs in `tests/serverless/test_input.json`.
 
 ## Supported Languages
 The general-purpose Chatterbox Multilingual model supports the following languages:

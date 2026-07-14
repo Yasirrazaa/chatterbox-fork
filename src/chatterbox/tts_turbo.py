@@ -12,6 +12,7 @@ from safetensors.torch import load_file
 from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 
+from .utils import resolve_device
 from .models.t3 import T3
 from .models.s3tokenizer import S3_SR
 from .models.s3gen import S3GEN_SR, S3Gen
@@ -130,14 +131,9 @@ class ChatterboxTurboTTS:
         self.watermarker = perth.PerthImplicitWatermarker()
 
     @classmethod
-    def from_local(cls, ckpt_dir, device) -> 'ChatterboxTurboTTS':
+    def from_local(cls, ckpt_dir, device=None) -> 'ChatterboxTurboTTS':
+        device = resolve_device(device)
         ckpt_dir = Path(ckpt_dir)
-
-        # Always load to CPU first for non-CUDA devices to handle CUDA-saved models
-        if device in ["cpu", "mps"]:
-            map_location = torch.device('cpu')
-        else:
-            map_location = None
 
         ve = VoiceEncoder()
         ve.load_state_dict(
@@ -178,7 +174,7 @@ class ChatterboxTurboTTS:
         conds = None
         builtin_voice = ckpt_dir / "conds.pt"
         if builtin_voice.exists():
-            conds = Conditionals.load(builtin_voice, map_location=map_location).to(device)
+            conds = Conditionals.load(builtin_voice).to(device)
 
         return cls(t3, s3gen, ve, tokenizer, device, conds=conds)
 

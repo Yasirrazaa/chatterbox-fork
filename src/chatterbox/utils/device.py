@@ -1,3 +1,5 @@
+"""Device utilities for Chatterbox inference."""
+
 import torch
 
 

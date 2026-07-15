@@ -19,9 +19,9 @@ from huggingface_hub import snapshot_download
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 from chatterbox.tts import ChatterboxTTS
 from chatterbox.tts_turbo import ChatterboxTurboTTS
-from .utils.normalizer import normalize_text as normalize_text_content
-from .utils.splitter import split_sentences
-from .utils.device import resolve_device
+from chatterbox.utils.normalizer import normalize_text as normalize_text_content
+from chatterbox.utils.splitter import split_sentences
+from chatterbox.utils.device import resolve_device
 
 
 ModelType = ChatterboxTTS | ChatterboxMultilingualTTS | ChatterboxTurboTTS
@@ -334,6 +334,7 @@ class ChatterboxInference:
             normalize_text: Override instance default for number normalization.
             sentence_split: Override instance default for sentence splitting.
             inter_sentence_silence_ms: Override instance default for silence between sentences.
+            num_candidates: Number of candidates to generate per sentence (best one is selected).
             **kwargs: Passed to underlying model.generate() (e.g., audio_prompt_path,
                      exaggeration, cfg_weight, temperature, etc.).
 
@@ -373,7 +374,32 @@ class ChatterboxInference:
             )
 
         for index, sentence in enumerate(sentences):
-            chunks.append(self.model.generate(sentence, **filtered_kwargs))
+            best_chunk = None
+            best_wer = float('inf')
+
+            for _ in range(num_candidates):
+                chunk = self.model.generate(sentence, **filtered_kwargs)
+                if num_candidates == 1:
+                    best_chunk = chunk
+                    break
+                
+                from .validation import validate_audio
+                sr = getattr(self.model, "sr", 24000)
+                wav_np = chunk.squeeze().cpu().numpy()
+                val_result = validate_audio(wav_np, sr, sentence, backend="faster-whisper", language=language_id)
+                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
+                
+                if wer == 0.0:
+                    best_chunk = chunk
+                    break
+                elif wer < best_wer:
+                    best_wer = wer
+                    best_chunk = chunk
+
+            if best_chunk is None:
+                best_chunk = chunk
+
+            chunks.append(best_chunk)
             if silence is not None and index < len(sentences) - 1:
                 chunks.append(silence)
 
@@ -386,6 +412,7 @@ class ChatterboxInference:
         normalize_text: bool | None = None,
         sentence_split: bool | None = None,
         inter_sentence_silence_ms: int | None = None,
+        num_candidates: int = 1,
         **kwargs,
     ) -> torch.Tensor:
         """Fast inference using CUDA graphs. Falls back to generate() on non-CUDA devices.
@@ -399,6 +426,7 @@ class ChatterboxInference:
                 normalize_text=normalize_text,
                 sentence_split=sentence_split,
                 inter_sentence_silence_ms=inter_sentence_silence_ms,
+                num_candidates=num_candidates,
                 **kwargs,
             )
 
@@ -433,7 +461,32 @@ class ChatterboxInference:
             )
 
         for index, sentence in enumerate(sentences):
-            chunks.append(self.model.generate_fast(sentence, **filtered_kwargs))
+            best_chunk = None
+            best_wer = float('inf')
+
+            for _ in range(num_candidates):
+                chunk = self.model.generate_fast(sentence, **filtered_kwargs)
+                if num_candidates == 1:
+                    best_chunk = chunk
+                    break
+                
+                from .validation import validate_audio
+                sr = getattr(self.model, "sr", 24000)
+                wav_np = chunk.squeeze().cpu().numpy()
+                val_result = validate_audio(wav_np, sr, sentence, backend="faster-whisper", language=language_id)
+                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
+                
+                if wer == 0.0:
+                    best_chunk = chunk
+                    break
+                elif wer < best_wer:
+                    best_wer = wer
+                    best_chunk = chunk
+
+            if best_chunk is None:
+                best_chunk = chunk
+
+            chunks.append(best_chunk)
             if silence is not None and index < len(sentences) - 1:
                 chunks.append(silence)
 

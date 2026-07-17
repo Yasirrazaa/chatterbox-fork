@@ -477,11 +477,14 @@ class T3(nn.Module):
         # ---- Generation Loop using kv_cache ----
         for i in tqdm(range(max_new_tokens), desc="Sampling", dynamic_ncols=True):
             logits_step = output.logits[:, -1, :]
-            # CFG combine  → (1, V)
-            cond   = logits_step[0:1, :]
-            uncond = logits_step[1:2, :]
-            cfg = torch.as_tensor(cfg_weight, device=cond.device, dtype=cond.dtype)
-            logits = cond + cfg * (cond - uncond)
+            if logits_step.size(0) == 2:
+                # CFG combine  → (1, V)
+                cond   = logits_step[0:1, :]
+                uncond = logits_step[1:2, :]
+                cfg = torch.as_tensor(cfg_weight, device=cond.device, dtype=cond.dtype)
+                logits = cond + cfg * (cond - uncond)
+            else:
+                logits = logits_step[0:1, :]
             
             # Apply alignment stream analyzer integrity checks
             if self.patched_model.alignment_stream_analyzer is not None:
@@ -520,8 +523,8 @@ class T3(nn.Module):
             if self.speech_pos_emb is not None:
                 next_token_embed = next_token_embed + self.speech_pos_emb.get_fixed_embedding(i + 1)
 
-            #  For CFG
-            next_token_embed = torch.cat([next_token_embed, next_token_embed])
+            # Expand to match batch size
+            next_token_embed = next_token_embed.expand(embeds.size(0), -1, -1)
 
             # Forward pass with only the new token and the cached past.
             output = self.patched_model(

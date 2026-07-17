@@ -324,6 +324,7 @@ class ChatterboxInference:
         normalize_text: bool | None = None,
         sentence_split: bool | None = None,
         inter_sentence_silence_ms: int | None = None,
+        num_candidates: int = 1,
         **kwargs,
     ) -> torch.Tensor:
         """Generate audio from text with normalization, sentence splitting, and silence.
@@ -498,6 +499,7 @@ class ChatterboxInference:
         language_id: str | None = None,
         normalize_text: bool | None = None,
         inter_sentence_silence_ms: int | None = None,
+        num_candidates: int = 1,
         **kwargs,
     ) -> Generator[torch.Tensor, None, None]:
         """Sync generator yielding one wav tensor per sentence (plus silence tensors between).
@@ -535,7 +537,32 @@ class ChatterboxInference:
             )
 
         for i, sentence in enumerate(sentences):
-            yield self.model.generate(sentence, **filtered_kwargs)
+            best_chunk = None
+            best_wer = float('inf')
+
+            for _ in range(num_candidates):
+                chunk = self.model.generate(sentence, **filtered_kwargs)
+                if num_candidates == 1:
+                    best_chunk = chunk
+                    break
+                
+                from .validation import validate_audio
+                sr = getattr(self.model, "sr", 24000)
+                wav_np = chunk.squeeze().cpu().numpy()
+                val_result = validate_audio(wav_np, sr, sentence, backend="faster-whisper", language=language_id)
+                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
+                
+                if wer == 0.0:
+                    best_chunk = chunk
+                    break
+                elif wer < best_wer:
+                    best_wer = wer
+                    best_chunk = chunk
+
+            if best_chunk is None:
+                best_chunk = chunk
+
+            yield best_chunk
             if silence is not None and i < len(sentences) - 1:
                 yield silence
 
@@ -545,6 +572,7 @@ class ChatterboxInference:
         language_id: str | None = None,
         normalize_text: bool | None = None,
         inter_sentence_silence_ms: int | None = None,
+        num_candidates: int = 1,
         **kwargs,
     ) -> AsyncGenerator[torch.Tensor, None]:
         """Async generator yielding one wav tensor per sentence (plus silence tensors between).
@@ -582,7 +610,34 @@ class ChatterboxInference:
             )
 
         for i, sentence in enumerate(sentences):
-            yield await asyncio.to_thread(self.model.generate, sentence, **filtered_kwargs)
+            best_chunk = None
+            best_wer = float('inf')
+
+            for _ in range(num_candidates):
+                chunk = await asyncio.to_thread(self.model.generate, sentence, **filtered_kwargs)
+                if num_candidates == 1:
+                    best_chunk = chunk
+                    break
+                
+                from .validation import validate_audio
+                sr = getattr(self.model, "sr", 24000)
+                wav_np = chunk.squeeze().cpu().numpy()
+                val_result = await asyncio.to_thread(
+                    validate_audio, wav_np, sr, sentence, backend="faster-whisper", language=language_id
+                )
+                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
+                
+                if wer == 0.0:
+                    best_chunk = chunk
+                    break
+                elif wer < best_wer:
+                    best_wer = wer
+                    best_chunk = chunk
+
+            if best_chunk is None:
+                best_chunk = chunk
+
+            yield best_chunk
             if silence is not None and i < len(sentences) - 1:
                 yield silence
 
@@ -592,6 +647,7 @@ class ChatterboxInference:
         language_id: str | None = None,
         normalize_text: bool | None = None,
         inter_sentence_silence_ms: int | None = None,
+        num_candidates: int = 1,
         **kwargs,
     ) -> Generator[torch.Tensor, None, None]:
         """Sync streaming variant using generate_fast() per sentence.
@@ -605,6 +661,7 @@ class ChatterboxInference:
                 language_id=language_id,
                 normalize_text=normalize_text,
                 inter_sentence_silence_ms=inter_sentence_silence_ms,
+                num_candidates=num_candidates,
                 **kwargs,
             )
             return
@@ -639,7 +696,32 @@ class ChatterboxInference:
             )
 
         for i, sentence in enumerate(sentences):
-            yield self.model.generate_fast(sentence, **filtered_kwargs)
+            best_chunk = None
+            best_wer = float('inf')
+
+            for _ in range(num_candidates):
+                chunk = self.model.generate_fast(sentence, **filtered_kwargs)
+                if num_candidates == 1:
+                    best_chunk = chunk
+                    break
+                
+                from .validation import validate_audio
+                sr = getattr(self.model, "sr", 24000)
+                wav_np = chunk.squeeze().cpu().numpy()
+                val_result = validate_audio(wav_np, sr, sentence, backend="faster-whisper", language=language_id)
+                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
+                
+                if wer == 0.0:
+                    best_chunk = chunk
+                    break
+                elif wer < best_wer:
+                    best_wer = wer
+                    best_chunk = chunk
+
+            if best_chunk is None:
+                best_chunk = chunk
+
+            yield best_chunk
             if silence is not None and i < len(sentences) - 1:
                 yield silence
 
@@ -649,6 +731,7 @@ class ChatterboxInference:
         language_id: str | None = None,
         normalize_text: bool | None = None,
         inter_sentence_silence_ms: int | None = None,
+        num_candidates: int = 1,
         **kwargs,
     ) -> AsyncGenerator[torch.Tensor, None]:
         """Async streaming variant using generate_fast() per sentence.
@@ -662,6 +745,7 @@ class ChatterboxInference:
                 language_id=language_id,
                 normalize_text=normalize_text,
                 inter_sentence_silence_ms=inter_sentence_silence_ms,
+                num_candidates=num_candidates,
                 **kwargs,
             ):
                 yield chunk
@@ -697,6 +781,33 @@ class ChatterboxInference:
             )
 
         for i, sentence in enumerate(sentences):
-            yield await asyncio.to_thread(self.model.generate_fast, sentence, **filtered_kwargs)
+            best_chunk = None
+            best_wer = float('inf')
+
+            for _ in range(num_candidates):
+                chunk = await asyncio.to_thread(self.model.generate_fast, sentence, **filtered_kwargs)
+                if num_candidates == 1:
+                    best_chunk = chunk
+                    break
+                
+                from .validation import validate_audio
+                sr = getattr(self.model, "sr", 24000)
+                wav_np = chunk.squeeze().cpu().numpy()
+                val_result = await asyncio.to_thread(
+                    validate_audio, wav_np, sr, sentence, backend="faster-whisper", language=language_id
+                )
+                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
+                
+                if wer == 0.0:
+                    best_chunk = chunk
+                    break
+                elif wer < best_wer:
+                    best_wer = wer
+                    best_chunk = chunk
+
+            if best_chunk is None:
+                best_chunk = chunk
+
+            yield best_chunk
             if silence is not None and i < len(sentences) - 1:
                 yield silence

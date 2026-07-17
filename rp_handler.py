@@ -10,6 +10,9 @@ import logging
 from typing import Optional, Dict, Any, List
 import traceback
 
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+
 try:
     from chatterbox_serverless.inference import ChatterboxInference
     from chatterbox_serverless import text_preprocessing, validation as _validation
@@ -155,6 +158,7 @@ def text_to_speech_pipeline(
     denoise: bool = False,
     normalize: bool = False,
     normalize_mode: str = "ebr",
+    num_candidates: int = 1,
     **generation_kwargs,
 ) -> Optional[torch.Tensor]:
     """Generate audio via the ChatterboxInference wrapper.
@@ -174,13 +178,13 @@ def text_to_speech_pipeline(
             audio_tensor = model.generate_fast(
                 text, language_id=language_id,
                 inter_sentence_silence_ms=inter_sentence_silence_ms,
-                audio_prompt_path=audio_prompt_path, **generation_kwargs,
+                audio_prompt_path=audio_prompt_path, num_candidates=num_candidates, **generation_kwargs,
             )
         else:
             audio_tensor = model.generate(
                 text, language_id=language_id,
                 inter_sentence_silence_ms=inter_sentence_silence_ms,
-                audio_prompt_path=audio_prompt_path, **generation_kwargs,
+                audio_prompt_path=audio_prompt_path, num_candidates=num_candidates, **generation_kwargs,
             )
 
         if denoise or normalize:
@@ -245,6 +249,7 @@ def validate_input(job_input: Dict[str, Any]) -> Dict[str, Any]:
         'normalize': job_input.get('normalize', False),
         'normalize_mode': job_input.get('normalize_mode', 'ebr'),
         'validate': job_input.get('validate', False),
+        'num_candidates': job_input.get('num_candidates', 1),
         'output_format': job_input.get('output_format', 'wav'),
     }
 
@@ -303,6 +308,7 @@ def handler(job):
             audio_prompt_path=audio_prompt_path, use_fast=v['use_fast'],
             preprocess_text=v['preprocess_text'], denoise=v['denoise'],
             normalize=v['normalize'], normalize_mode=v['normalize_mode'],
+            num_candidates=v['num_candidates'],
             **gen_kwargs,
         )
         if audio_tensor is None:

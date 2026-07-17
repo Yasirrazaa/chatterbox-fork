@@ -1,5 +1,10 @@
 import random
 import numpy as np
+import sys
+import os
+
+# Ensure the src/ directory is in the Python path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
 import torch
 import os
 import re
@@ -15,7 +20,8 @@ import string
 import difflib
 import time
 import gc
-from chatterbox.src.chatterbox.tts import ChatterboxTTS
+from chatterbox.tts import ChatterboxTTS
+from chatterbox.vc import ChatterboxVC
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import whisper
 import nltk
@@ -26,7 +32,6 @@ import csv
 import argparse
 import soundfile as sf
 import inspect, traceback
-from chatterbox.src.chatterbox.vc import ChatterboxVC
 try:
     import pyrnnoise
     _PYRNNOISE_AVAILABLE = True

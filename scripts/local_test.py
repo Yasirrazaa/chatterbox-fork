@@ -19,7 +19,10 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure the project root and src/ directory are in the Python path
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
+sys.path.insert(0, os.path.join(ROOT_DIR, "src"))
 
 from rp_handler import handler, initialize_model
 
@@ -63,7 +66,7 @@ def build_job(args) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="Local test for rp_handler")
-    ap.add_argument("--input", help="Path to a JSON job file (default: test_input.json)")
+    ap.add_argument("--input", help="Path to a JSON job file (default: tests/serverless/test_input.json)")
     ap.add_argument("--out", default="outputs/local_test_output.wav",
                     help="Output audio path")
     ap.add_argument("--model_type", default="multilingual",
@@ -79,8 +82,12 @@ def main():
     ap.add_argument("--validate", action="store_true")
     args = ap.parse_args()
 
-    if args.input is None and not os.path.exists("test_input.json"):
-        pass
+    if args.input is None:
+        args.input = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests/serverless/test_input.json")
+    
+    if not os.path.exists(args.input):
+        print(f"Warning: Default test input not found at {args.input}")
+
     job = build_job(args)
 
     # Pre-initialize the model once (cached for subsequent calls)

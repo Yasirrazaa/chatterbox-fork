@@ -1,5 +1,10 @@
 import random
 import numpy as np
+import sys
+import os
+
+# Ensure the src/ directory is in the Python path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src"))
 import torch
 import gradio as gr
 from chatterbox.tts_turbo import ChatterboxTurboTTS

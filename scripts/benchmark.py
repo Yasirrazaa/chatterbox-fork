@@ -85,7 +85,8 @@ def benchmark_whisper_validation():
     sr = getattr(pipeline.model, "sr", 24000)
     wav_unval_np = wav_unval.squeeze().cpu().numpy()
     val_unval = validate_audio(wav_unval_np, sr, tricky_text, backend="faster-whisper", language="en")
-    wer_unval = val_unval.get("wer", 0.0)
+    wer_unval = val_unval.get("wer")
+    wer_unval_str = f"{wer_unval:.2f}" if wer_unval is not None else "N/A"
     
     # With validation (num_candidates = 3)
     console.print("Running WITH Whisper validation (num_candidates=3)...")
@@ -96,7 +97,8 @@ def benchmark_whisper_validation():
     # Calculate WER for validated audio
     wav_val_np = wav_val.squeeze().cpu().numpy()
     val_val = validate_audio(wav_val_np, sr, tricky_text, backend="faster-whisper", language="en")
-    wer_val = val_val.get("wer", 0.0)
+    wer_val = val_val.get("wer")
+    wer_val_str = f"{wer_val:.2f}" if wer_val is not None else "N/A"
     
     table = Table(title="Whisper Validation Overhead")
     table.add_column("Method", justify="right", style="cyan")
@@ -104,8 +106,8 @@ def benchmark_whisper_validation():
     table.add_column("Word Error Rate (WER)", justify="right", style="red")
     table.add_column("Overhead", justify="right", style="yellow")
     
-    table.add_row("No Validation (num_candidates=1)", f"{time_unval:.2f}", f"{wer_unval:.2f}", "-")
-    table.add_row("Whisper Validated (num_candidates=3)", f"{time_val:.2f}", f"{wer_val:.2f}", f"+{time_val - time_unval:.2f}s")
+    table.add_row("No Validation (num_candidates=1)", f"{time_unval:.2f}", wer_unval_str, "-")
+    table.add_row("Whisper Validated (num_candidates=3)", f"{time_val:.2f}", wer_val_str, f"+{time_val - time_unval:.2f}s")
     
     console.print(table)
     console.print("[italic]Note: In production, the +1-2s overhead of Whisper validation guarantees 0% hallucination rates by auto-discarding variations with high Word Error Rates (WER).[/italic]")

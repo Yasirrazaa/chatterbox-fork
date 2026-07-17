@@ -446,7 +446,8 @@ class T3(nn.Module):
 
         bos_token = torch.tensor([[self.hp.start_speech_token]], dtype=torch.long, device=device)
         bos_embed = self.speech_emb(bos_token)  # shape: (B, 1, embed_dim)
-        bos_embed = bos_embed + self.speech_pos_emb.get_fixed_embedding(0)
+        if self.speech_pos_emb is not None:
+            bos_embed = bos_embed + self.speech_pos_emb.get_fixed_embedding(0)
 
         # batch_size=2 for CFG
         bos_embed = torch.cat([bos_embed, bos_embed])
@@ -516,7 +517,8 @@ class T3(nn.Module):
 
             # Get embedding for the new token.
             next_token_embed = self.speech_emb(next_token)
-            next_token_embed = next_token_embed + self.speech_pos_emb.get_fixed_embedding(i + 1)
+            if self.speech_pos_emb is not None:
+                next_token_embed = next_token_embed + self.speech_pos_emb.get_fixed_embedding(i + 1)
 
             #  For CFG
             next_token_embed = torch.cat([next_token_embed, next_token_embed])

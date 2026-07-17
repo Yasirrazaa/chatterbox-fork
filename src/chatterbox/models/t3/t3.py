@@ -449,8 +449,8 @@ class T3(nn.Module):
         if self.speech_pos_emb is not None:
             bos_embed = bos_embed + self.speech_pos_emb.get_fixed_embedding(0)
 
-        # batch_size=2 for CFG
-        bos_embed = torch.cat([bos_embed, bos_embed])
+        # Expand to match batch size (1 for turbo, 2 for CFG)
+        bos_embed = bos_embed.expand(embeds.size(0), -1, -1)
 
         # Combine condition and BOS token for the initial input
         inputs_embeds = torch.cat([embeds, bos_embed], dim=1)

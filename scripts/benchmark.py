@@ -66,7 +66,8 @@ def benchmark_whisper_validation():
     
     console.print("Loading ChatterboxInference (Pipeline)...")
     from chatterbox_serverless.validation import validate_audio
-    pipeline = ChatterboxInference.from_pretrained(model_type="turbo", device="cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    pipeline = ChatterboxInference.from_pretrained(model_type="turbo", device=device)
     
     # Tricky text that TTS might struggle with (names, numbers, weird punctuation)
     tricky_text = "In 1999, Dr. J.R.R. Tolkien's friend, Mr. O'Connor, paid $4,592.33 for a bizarre, antique artifact... wasn't it?"

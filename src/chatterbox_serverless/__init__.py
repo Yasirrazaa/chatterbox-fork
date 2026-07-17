@@ -1,7 +1,7 @@
 """Chatterbox Serverless - Optimized TTS wrapper for RunPod serverless deployment."""
 
 from .inference import ChatterboxInference
-from .utils import normalize_text, split_sentences, resolve_device, normalize_numbers
+from chatterbox.utils import normalize_text, split_sentences, resolve_device, normalize_numbers
 from . import text_preprocessing
 from . import denoise
 from . import validation

@@ -313,6 +313,11 @@ class ChatterboxTurboTTS:
         text_tokens = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True)
         text_tokens = text_tokens.input_ids.to(self.device)
 
+        sot = self.t3.hp.start_text_token
+        eot = self.t3.hp.stop_text_token
+        text_tokens = torch.nn.functional.pad(text_tokens, (1, 0), value=sot)
+        text_tokens = torch.nn.functional.pad(text_tokens, (0, 1), value=eot)
+
         # Force cfg_weight to 0.0 for turbo to avoid CFG doubling
         speech_tokens = self.t3.inference_fast(
             t3_cond=self.conds.t3,

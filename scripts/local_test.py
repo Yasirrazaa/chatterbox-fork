@@ -66,7 +66,7 @@ def build_job(args) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description="Local test for rp_handler")
-    ap.add_argument("--input", help="Path to a JSON job file (default: tests/serverless/test_input.json)")
+    ap.add_argument("--input", help="Path to a JSON job file (default: tests/serverless/test_input.json if no args provided)")
     ap.add_argument("--out", default="outputs/local_test_output.wav",
                     help="Output audio path")
     ap.add_argument("--model_type", default="multilingual",
@@ -81,6 +81,10 @@ def main():
     ap.add_argument("--normalize", action="store_true")
     ap.add_argument("--validate", action="store_true")
     args = ap.parse_args()
+
+    # If no arguments were provided at all, default to the test JSON file
+    if len(sys.argv) == 1:
+        args.input = "tests/serverless/test_input.json"
 
     if args.input and not os.path.exists(args.input):
         print(f"Warning: Test input not found at {args.input}")

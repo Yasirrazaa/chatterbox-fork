@@ -73,12 +73,16 @@ def benchmark_fast_vs_normal():
         console.print(f"\n[bold]Testing {name}[/bold]")
         model = model_class.from_pretrained(device=device)
         
+        kwargs = {}
+        if name == "ChatterboxMultilingualTTS":
+            kwargs["language_id"] = "en"
+            
         # Warmup
         console.print("Warming up models...")
         dummy_text = "Hello world, this is a short test."
-        _ = model.generate(dummy_text)
+        _ = model.generate(dummy_text, **kwargs)
         if hasattr(model, "generate_fast"):
-            _ = model.generate_fast(dummy_text)
+            _ = model.generate_fast(dummy_text, **kwargs)
         
         times_normal = []
         rtfs_normal = []
@@ -87,7 +91,7 @@ def benchmark_fast_vs_normal():
         
         for _ in range(NUM_RUNS):
             start = time.perf_counter()
-            wav_normal = model.generate(text)
+            wav_normal = model.generate(text, **kwargs)
             t = time.perf_counter() - start
             audio_dur = wav_normal.shape[1] / model.sr
             times_normal.append(t)
@@ -95,7 +99,7 @@ def benchmark_fast_vs_normal():
             
             if hasattr(model, "generate_fast"):
                 start = time.perf_counter()
-                wav_fast = model.generate_fast(text)
+                wav_fast = model.generate_fast(text, **kwargs)
                 t = time.perf_counter() - start
                 audio_dur = wav_fast.shape[1] / model.sr
                 times_fast.append(t)

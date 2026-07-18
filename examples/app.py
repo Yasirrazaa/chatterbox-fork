@@ -204,10 +204,10 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
                             value="en", label="Language (Multilingual only)", visible=False
                         )
                         long_exagg = gr.Slider(0.0, 2.0, value=0.0, label="Exaggeration")
-                        long_cfg = gr.Slider(0.0, 1.0, value=0.5, label="CFG Weight (Base/MTL only)")
+                        long_cfg = gr.Slider(0.0, 1.0, value=0.5, label="CFG Weight (Base/MTL only)", visible=True)
                         long_temp = gr.Slider(0.1, 2.0, value=0.8, label="Temperature")
-                        long_minp = gr.Slider(0.0, 1.0, value=0.05, label="Min-P (Turbo only)")
-                        long_topp = gr.Slider(0.0, 1.0, value=0.95, label="Top-P (Turbo only)")
+                        long_minp = gr.Slider(0.0, 1.0, value=0.05, label="Min-P (Turbo only)", visible=False)
+                        long_topp = gr.Slider(0.0, 1.0, value=0.95, label="Top-P (Turbo only)", visible=False)
                         long_rep = gr.Slider(1.0, 2.0, value=1.2, label="Repetition Penalty")
                         long_seed = gr.Number(value=0, label="Random Seed (0 for random)")
                         
@@ -246,9 +246,21 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
             long_btn.click(_gen_long, [long_model, long_text, long_ref, long_cands, long_batch, long_use_fast, long_lang, long_exagg, long_cfg, long_temp, long_minp, long_topp, long_rep, long_seed], long_out)
 
             def _update_long_visibility(mtype):
-                return gr.update(visible=(mtype == "multilingual"))
+                is_mtl = (mtype == "multilingual")
+                is_turbo = (mtype == "turbo")
                 
-            long_model.change(_update_long_visibility, inputs=[long_model], outputs=[long_lang])
+                return [
+                    gr.update(visible=is_mtl),          # long_lang
+                    gr.update(visible=(not is_turbo)),  # long_cfg
+                    gr.update(visible=is_turbo),        # long_minp
+                    gr.update(visible=is_turbo)         # long_topp
+                ]
+                
+            long_model.change(
+                _update_long_visibility, 
+                inputs=[long_model], 
+                outputs=[long_lang, long_cfg, long_minp, long_topp]
+            )
 
         # --- TAB 5: VOICE CONVERSION ---
         with gr.Tab("🔄 Voice Conversion"):

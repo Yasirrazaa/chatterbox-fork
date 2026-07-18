@@ -43,11 +43,12 @@ RUN /app/.venv/bin/python -m pip install \
 
 # ---- Install project + deps from pyproject.toml ----
 COPY pyproject.toml /app/pyproject.toml
+COPY uv.lock /app/uv.lock
 COPY src /app/src
 COPY rp_handler.py /app/rp_handler.py
 COPY scripts /app/scripts
 
-RUN uv sync --python /app/.venv
+RUN uv sync --all-extras --python /app/.venv
 
 # ---- Runtime env ----
 ENV PYTHONPATH=/app/src:/app

@@ -199,9 +199,15 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
                         long_use_fast = gr.Checkbox(value=False, label="Use Fast Inference (CUDA Graphs)")
                         
                     with gr.Accordion("Generation Parameters", open=False):
+                        long_lang = gr.Dropdown(
+                            choices=["en", "fr", "de", "es", "it", "pt", "pl", "nl", "ru", "zh", "ja", "ko"],
+                            value="en", label="Language (Multilingual only)", visible=False
+                        )
                         long_exagg = gr.Slider(0.0, 2.0, value=0.0, label="Exaggeration")
                         long_cfg = gr.Slider(0.0, 1.0, value=0.5, label="CFG Weight (Base/MTL only)")
                         long_temp = gr.Slider(0.1, 2.0, value=0.8, label="Temperature")
+                        long_minp = gr.Slider(0.0, 1.0, value=0.05, label="Min-P (Turbo only)")
+                        long_topp = gr.Slider(0.0, 1.0, value=0.95, label="Top-P (Turbo only)")
                         long_rep = gr.Slider(1.0, 2.0, value=1.2, label="Repetition Penalty")
                         long_seed = gr.Number(value=0, label="Random Seed (0 for random)")
                         
@@ -210,7 +216,7 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
                 with gr.Column():
                     long_out = gr.Audio(label="Output")
                     
-            def _gen_long(mtype, text, ref, cands, batch, use_fast, exagg, cfg, temp, rep, seed):
+            def _gen_long(mtype, text, ref, cands, batch, use_fast, lang, exagg, cfg, temp, minp, topp, rep, seed):
                 free_vram()
                 pipe = get_pipeline(mtype)
                 set_seed(int(seed))
@@ -222,8 +228,13 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
                     "exaggeration": exagg,
                     "cfg_weight": cfg,
                     "temperature": temp,
+                    "min_p": minp,
+                    "top_p": topp,
                     "repetition_penalty": rep
                 }
+                
+                if mtype == "multilingual":
+                    kwargs["language_id"] = lang
                 
                 if use_fast:
                     wav = pipe.generate_fast(text, **kwargs)
@@ -232,7 +243,12 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
                     
                 return (pipe.sr, wav.squeeze(0).numpy())
 
-            long_btn.click(_gen_long, [long_model, long_text, long_ref, long_cands, long_batch, long_use_fast, long_exagg, long_cfg, long_temp, long_rep, long_seed], long_out)
+            long_btn.click(_gen_long, [long_model, long_text, long_ref, long_cands, long_batch, long_use_fast, long_lang, long_exagg, long_cfg, long_temp, long_minp, long_topp, long_rep, long_seed], long_out)
+
+            def _update_long_visibility(mtype):
+                return gr.update(visible=(mtype == "multilingual"))
+                
+            long_model.change(_update_long_visibility, inputs=[long_model], outputs=[long_lang])
 
         # --- TAB 5: VOICE CONVERSION ---
         with gr.Tab("🔄 Voice Conversion"):

@@ -836,10 +836,13 @@ def _fast_generate_t3_token(
     if cfg_weight > 0.0:
         next_token_embed = torch.cat([next_token_embed, next_token_embed])
 
+    # Create 1D tensor [seq_len] purely on GPU to avoid Host-to-Device sync during graph capture
+    seq_len_val = kv_cache.get_seq_length()
+    
     out = patched_model(
         inputs_embeds=next_token_embed,
         past_key_values=kv_cache,
-        cache_position=kv_cache.get_seq_length().unsqueeze(0),
+        cache_position=torch.arange(seq_len_val, seq_len_val + 1, device=next_token_embed.device),
         max_position=max_position,
         output_hidden_states=False,
         output_attentions=False,

@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.table import Table
 
 from chatterbox.tts_turbo import ChatterboxTurboTTS
+from chatterbox.tts import ChatterboxTTS
+from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 from chatterbox_serverless.inference import ChatterboxInference
 from chatterbox.utils.splitter import chunk_text, split_sentences
 
@@ -53,62 +55,69 @@ def benchmark_chunking_strategies():
     console.print(table)
 
 def benchmark_fast_vs_normal():
-    console.rule("[bold red]Benchmarking: Normal vs Fast (CUDA Graphs)[/bold red]")
+    console.rule("[bold blue]Benchmarking: Normal vs Fast (CUDA Graphs)[/bold blue]")
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    if device != "cuda":
+    if device == "cpu":
         console.print("[yellow]Note: Benchmarking on CPU. CUDA graphs (fast path) only provides speedups on CUDA devices. Comparing anyway.[/yellow]")
-        
-    console.print("Loading ChatterboxTurboTTS...")
-    model = ChatterboxTurboTTS.from_pretrained(device=device)
-    
-    # Warmup
-    console.print("Warming up models...")
-    dummy_text = "Hello world, this is a short test."
-    _ = model.generate(dummy_text)
-    if hasattr(model, "generate_fast"):
-        _ = model.generate_fast(dummy_text)
-    
-    text = "The quick brown fox jumps over the lazy dog. Generating audio locally using autoregressive transformer models requires extreme optimization."
-    
-    times_normal = []
-    rtfs_normal = []
-    
-    times_fast = []
-    rtfs_fast = []
-    
-    for _ in range(NUM_RUNS):
-        start = time.perf_counter()
-        wav_normal = model.generate(text)
-        t = time.perf_counter() - start
-        audio_dur = wav_normal.shape[1] / model.sr
-        times_normal.append(t)
-        rtfs_normal.append(t / audio_dur)
-        
-        if hasattr(model, "generate_fast"):
-            start = time.perf_counter()
-            wav_fast = model.generate_fast(text)
-            t = time.perf_counter() - start
-            audio_dur = wav_fast.shape[1] / model.sr
-            times_fast.append(t)
-            rtfs_fast.append(t / audio_dur)
 
-    ta.save(OUTPUT_DIR / "bench_normal.wav", wav_normal, model.sr)
-    if hasattr(model, "generate_fast"):
-        ta.save(OUTPUT_DIR / "bench_fast.wav", wav_fast, model.sr)
-    
-    table = Table(title=f"Inference Speed Comparison ({NUM_RUNS} runs)")
-    table.add_column("Method", justify="right", style="cyan")
-    table.add_column("Generation Time (s)", justify="right", style="magenta")
-    table.add_column("RTF (lower is better)", justify="right", style="yellow")
-    
-    table.add_row("Standard generate()", format_runs(times_normal), format_runs(rtfs_normal))
-    if times_fast:
-        table.add_row("CUDA Graphs generate_fast()", format_runs(times_fast), format_runs(rtfs_fast))
-        import numpy as np
-        speedup = np.mean(times_normal) / np.mean(times_fast)
-        console.print(f"[bold green]Speedup Multiplier: {speedup:.2f}x[/bold green]")
-    
-    console.print(table)
+    models_to_test = [
+        ("ChatterboxTurboTTS", ChatterboxTurboTTS),
+        ("ChatterboxTTS (Base)", ChatterboxTTS),
+        ("ChatterboxMultilingualTTS", ChatterboxMultilingualTTS)
+    ]
+
+    text = "The quick brown fox jumps over the lazy dog. Generating audio locally using autoregressive transformer models requires extreme optimization."
+
+    for name, model_class in models_to_test:
+        console.print(f"\n[bold]Testing {name}[/bold]")
+        model = model_class.from_pretrained(device=device)
+        
+        # Warmup
+        console.print("Warming up models...")
+        dummy_text = "Hello world, this is a short test."
+        _ = model.generate(dummy_text)
+        if hasattr(model, "generate_fast"):
+            _ = model.generate_fast(dummy_text)
+        
+        times_normal = []
+        rtfs_normal = []
+        times_fast = []
+        rtfs_fast = []
+        
+        for _ in range(NUM_RUNS):
+            start = time.perf_counter()
+            wav_normal = model.generate(text)
+            t = time.perf_counter() - start
+            audio_dur = wav_normal.shape[1] / model.sr
+            times_normal.append(t)
+            rtfs_normal.append(t / audio_dur)
+            
+            if hasattr(model, "generate_fast"):
+                start = time.perf_counter()
+                wav_fast = model.generate_fast(text)
+                t = time.perf_counter() - start
+                audio_dur = wav_fast.shape[1] / model.sr
+                times_fast.append(t)
+                rtfs_fast.append(t / audio_dur)
+
+        table = Table(title=f"{name} Speed ({NUM_RUNS} runs)")
+        table.add_column("Method", justify="right", style="cyan")
+        table.add_column("Generation Time (s)", justify="right", style="magenta")
+        table.add_column("RTF (lower is better)", justify="right", style="yellow")
+        
+        table.add_row("Standard generate()", format_runs(times_normal), format_runs(rtfs_normal))
+        if times_fast:
+            table.add_row("CUDA Graphs generate_fast()", format_runs(times_fast), format_runs(rtfs_fast))
+            import numpy as np
+            speedup = np.mean(times_normal) / np.mean(times_fast)
+            console.print(f"[bold green]{name} Speedup Multiplier: {speedup:.2f}x[/bold green]")
+        
+        console.print(table)
+        
+        # Cleanup to save memory between models
+        del model
+        torch.cuda.empty_cache()
 
 def benchmark_whisper_validation():
     console.rule("[bold blue]Benchmarking: Without vs With Whisper Validation[/bold blue]")

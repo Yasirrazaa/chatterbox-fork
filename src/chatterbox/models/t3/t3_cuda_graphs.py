@@ -31,6 +31,7 @@ class T3StepCUDAGraphWrapper:
         min_p_warper: Any,
         top_p_warper: Any,
         alignment_stream_analyzer: Any = None,
+        stop_speech_token: int = 6562,
     ):
         """
         Initialize the CUDA graph wrapper with bucketing support.
@@ -49,6 +50,7 @@ class T3StepCUDAGraphWrapper:
         self.repetition_penalty_processor = repetition_penalty_processor
         self.min_p_warper = min_p_warper
         self.top_p_warper = top_p_warper
+        self.stop_speech_token = stop_speech_token
 
         # Dictionary to store graphs and static tensors for each bucket
         self._bucket_graphs: Dict[int, torch.cuda.CUDAGraph] = {}
@@ -129,6 +131,7 @@ class T3StepCUDAGraphWrapper:
                     static_tensors["stride_length"],
                     static_tensors["max_position"],
                     self.alignment_stream_analyzer,
+                    self.stop_speech_token,
                 )
 
         # Store static tensors for this bucket

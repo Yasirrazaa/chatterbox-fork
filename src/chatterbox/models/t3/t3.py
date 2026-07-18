@@ -736,6 +736,7 @@ class T3(nn.Module):
                 self.repetition_penalty_processor,
                 self.min_p_warper,
                 self.top_p_warper,
+                stop_speech_token=self.hp.stop_speech_token,
             )
 
         # generated_ids: batch_size=1 (we only track the conditional sequence)
@@ -817,11 +818,16 @@ def _fast_generate_t3_token(
     stride_length=1,
     max_position=None,
     alignment_stream_analyzer=None,
+    stop_speech_token=6562,
 ):
     """Single-token generation step; designed to be wrapped in a CUDA graph."""
     logits = output_logits[:, -1, :]
     if cfg_weight > 0.0:
         logits = logits[0:1] + cfg_weight * (logits[0:1] - logits[1:2])
+
+    # Mask out non-speech tokens to prevent generating text/special tokens!
+    # Valid tokens are 0 to stop_speech_token (inclusive)
+    logits[:, stop_speech_token + 1:] = -float("inf")
 
     logits = repetition_penalty_processor(generated_ids, logits)
     if temperature != 1.0:

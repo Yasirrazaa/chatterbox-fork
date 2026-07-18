@@ -36,7 +36,7 @@ chatterbox/
 ├── src/chatterbox/                 # Raw PyTorch Models (TTS, Turbo, Multilingual, VC)
 ├── src/chatterbox_serverless/      # High-Level Wrappers (Chunking, Validation, Inference)
 ├── examples/
-│   ├── apps/app.py                 # The unified Gradio Studio web interface
+│   ├── app.py                      # The unified Gradio Studio web interface
 │   └── quickstart.py               # Consolidated Python API examples for all models
 ├── scripts/
 │   ├── benchmark.py                # Comprehensive performance benchmarking suite
@@ -74,7 +74,7 @@ uv pip install -e .
 ### 1. The Gradio Studio (No Code)
 The easiest way to test everything is through our unified web interface:
 ```shell
-uv run examples/apps/app.py
+uv run examples/app.py
 ```
 *This will launch a local web server with tabs for Turbo TTS, Multilingual TTS, Voice Conversion, and Long-Form Batching.*
 

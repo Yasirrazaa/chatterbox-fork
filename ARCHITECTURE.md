@@ -48,7 +48,7 @@ flowchart TD
 
 ## 2. Layer Breakdown
 
-### Layer 1: Client Entrypoints (`examples/apps`, `rp_handler.py`)
+### Layer 1: Client Entrypoints (`examples/app.py`, `rp_handler.py`)
 This layer handles User Interfaces and API connections. It intentionally contains **zero logic** regarding text splitting, tensor manipulation, or validation. 
 * **`app.py`:** The unified Gradio Studio. Uses a lazy-loaded Singleton pattern to hot-swap models without memory leaks.
 * **`rp_handler.py`:** The RunPod serverless worker. Parses incoming JSON requests, decodes base64 audio prompts, and routes them directly to the pipeline.

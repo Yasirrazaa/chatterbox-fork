@@ -116,6 +116,8 @@ class T3(nn.Module):
             self._repetition_penalty = float(repetition_penalty)
 
     def get_speech_pos_embedding_cache(self, max_gen_tokens, dtype):
+        if self.speech_pos_emb is None:
+            return None
         if not hasattr(self, '_speech_pos_embedding_cache') or \
                 self._speech_pos_embedding_cache.size(0) < max_gen_tokens:
             cache = [self.speech_pos_emb.get_fixed_embedding(i) for i in range(max_gen_tokens)]
@@ -677,11 +679,13 @@ class T3(nn.Module):
         )
 
         # Pre-compute embedding caches (needed for bos_embed and the generation loop)
-        self.get_speech_pos_embedding_cache(max_new_tokens + 1, dtype=embeds.dtype)
+        pos_cache = self.get_speech_pos_embedding_cache(max_new_tokens + 1, dtype=embeds.dtype)
         self.init_speech_embedding_cache(self.hp.speech_tokens_dict_size, dtype=embeds.dtype)
 
         bos_token = torch.tensor([[self.hp.start_speech_token]], dtype=torch.long, device=self.device)
-        bos_embed = self._speech_embedding_cache[bos_token] + self._speech_pos_embedding_cache[0]
+        bos_embed = self._speech_embedding_cache[bos_token]
+        if pos_cache is not None:
+            bos_embed = bos_embed + pos_cache[0]
         if cfg_weight > 0.0:
             bos_embed = torch.cat([bos_embed, bos_embed])
         inputs_embeds = torch.cat([embeds, bos_embed], dim=1)
@@ -757,7 +761,7 @@ class T3(nn.Module):
                 output_logits,
                 i_tensor,
                 batch_idx,
-                self._speech_pos_embedding_cache,
+                pos_cache,
                 generated_ids,
                 cfg_weight,
                 temperature,
@@ -821,8 +825,10 @@ def _fast_generate_t3_token(
     next_token = torch.multinomial(probs, num_samples=1)
     generated_ids.index_put_((batch_idx, i_tensor), next_token.squeeze(-1))
 
-    position_embed = torch.index_select(speech_pos_embedding_cache, 0, i_tensor).squeeze(0)
-    next_token_embed = speech_embedding_cache[next_token] + position_embed
+    next_token_embed = speech_embedding_cache[next_token]
+    if speech_pos_embedding_cache is not None:
+        position_embed = torch.index_select(speech_pos_embedding_cache, 0, i_tensor).squeeze(0)
+        next_token_embed = next_token_embed + position_embed
     if cfg_weight > 0.0:
         next_token_embed = torch.cat([next_token_embed, next_token_embed])
 

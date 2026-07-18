@@ -775,7 +775,12 @@ class T3(nn.Module):
                 if (generated_ids[0] == stop_token).any():
                     break
 
-        return generated_ids
+        stop_indices = (generated_ids[0, bos_len:] == stop_token).nonzero(as_tuple=True)[0]
+        if len(stop_indices) > 0:
+            final_idx = bos_len + stop_indices[0].item()
+            return generated_ids[:, bos_len:final_idx]
+        else:
+            return generated_ids[:, bos_len:bos_len + i + 1]
 
 
 def _fast_initial_forward_pass(inputs_embeds, kv_cache, patched_model, seq_len):

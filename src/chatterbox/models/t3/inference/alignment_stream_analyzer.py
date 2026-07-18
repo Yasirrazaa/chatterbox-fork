@@ -60,6 +60,7 @@ class AlignmentStreamAnalyzer:
         # using it for all layers slows things down too much. We can apply it to just one layer
         # by intercepting the kwargs and adding a forward hook (credit: jrm)
         self.last_aligned_attns = []
+        self.handles = []
         for i, (layer_idx, head_idx) in enumerate(LLAMA_ALIGNED_HEADS):
             self.last_aligned_attns += [None]
             self._add_attention_spy(tfmr, i, layer_idx, head_idx)
@@ -81,13 +82,26 @@ class AlignmentStreamAnalyzer:
 
         target_layer = tfmr.layers[layer_idx].self_attn
         # Register hook and store the handle
-        target_layer.register_forward_hook(attention_forward_hook)
+        handle = target_layer.register_forward_hook(attention_forward_hook)
+        self.handles.append(handle)
         if hasattr(tfmr, 'config') and hasattr(tfmr.config, 'output_attentions'):
-            self.original_output_attentions = tfmr.config.output_attentions
-            self.original_attn_implementation = getattr(tfmr.config, '_attn_implementation', None)
+            if not hasattr(self, 'original_output_attentions'):
+                self.original_output_attentions = tfmr.config.output_attentions
+                self.original_attn_implementation = getattr(tfmr.config, '_attn_implementation', None)
             if getattr(tfmr.config, '_attn_implementation', None) == 'sdpa':
                 tfmr.config._attn_implementation = 'eager'
             tfmr.config.output_attentions = True
+
+    def destroy(self, tfmr):
+        """Remove hooks and restore original config."""
+        for handle in self.handles:
+            handle.remove()
+        self.handles = []
+        
+        if hasattr(tfmr, 'config') and hasattr(self, 'original_output_attentions'):
+            tfmr.config.output_attentions = self.original_output_attentions
+            if hasattr(self, 'original_attn_implementation'):
+                tfmr.config._attn_implementation = self.original_attn_implementation
 
     def step(self, logits, next_token=None):
         """

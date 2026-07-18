@@ -400,32 +400,25 @@ class T3(nn.Module):
         # In order to use the standard HF generate method, we need to extend some methods to inject our custom logic
         # Note the llama-specific logic. Other tfmr types can be added later.
 
-        self.compiled = False
-
-        # TODO? synchronize the expensive compile function
-        # with self.compile_lock:
-        if not self.compiled:
-            # Default to None for English models, only create for multilingual
-            alignment_stream_analyzer = None
-            if self.hp.is_multilingual:
-                alignment_stream_analyzer = AlignmentStreamAnalyzer(
-                    self.tfmr,
-                    None,
-                    text_tokens_slice=(len_cond, len_cond + text_tokens.size(-1)),
-                    alignment_layer_idx=9, # TODO: hparam or something?
-                    eos_idx=self.hp.stop_speech_token,
-                )
-                assert alignment_stream_analyzer.eos_idx == self.hp.stop_speech_token
-
-            patched_model = T3HuggingfaceBackend(
-                config=self.cfg,
-                llama=self.tfmr,
-                speech_enc=self.speech_emb,
-                speech_head=self.speech_head,
-                alignment_stream_analyzer=alignment_stream_analyzer,
+        # Default to None for English models, only create for multilingual
+        alignment_stream_analyzer = None
+        if self.hp.is_multilingual:
+            alignment_stream_analyzer = AlignmentStreamAnalyzer(
+                self.tfmr,
+                None,
+                text_tokens_slice=(len_cond, len_cond + text_tokens.size(-1)),
+                alignment_layer_idx=9, # TODO: hparam or something?
+                eos_idx=self.hp.stop_speech_token,
             )
-            self.patched_model = patched_model
-            self.compiled = True
+            assert alignment_stream_analyzer.eos_idx == self.hp.stop_speech_token
+
+        patched_model = T3HuggingfaceBackend(
+            config=self.cfg,
+            llama=self.tfmr,
+            speech_enc=self.speech_emb,
+            speech_head=self.speech_head,
+            alignment_stream_analyzer=alignment_stream_analyzer,
+        )
 
         # # Run normal generate method, which calls our custom extended methods
         # return self.patched_model.generate(
@@ -465,8 +458,9 @@ class T3(nn.Module):
         self.update_processors(top_p=top_p, min_p=min_p, repetition_penalty=float(repetition_penalty))
 
         # ---- Initial Forward Pass (no kv_cache yet) ----
-        output = self.patched_model(
-            inputs_embeds=inputs_embeds,
+        try:
+            output = patched_model(
+                inputs_embeds=inputs_embeds,
             past_key_values=None,
             use_cache=True,
             output_attentions=True,
@@ -489,12 +483,12 @@ class T3(nn.Module):
                 logits = logits_step[0:1, :]
             
             # Apply alignment stream analyzer integrity checks
-            if self.patched_model.alignment_stream_analyzer is not None:
+            if patched_model.alignment_stream_analyzer is not None:
                 if logits.dim() == 1:            # guard in case something upstream squeezed
                     logits = logits.unsqueeze(0) # (1, V)
                 # Pass the last generated token for repetition tracking
                 last_token = generated_ids[0, -1].item() if len(generated_ids[0]) > 0 else None
-                logits = self.patched_model.alignment_stream_analyzer.step(logits, next_token=last_token)  # (1, V)
+                logits = patched_model.alignment_stream_analyzer.step(logits, next_token=last_token)  # (1, V)
 
             # Apply repetition penalty
             ids_for_proc = generated_ids[:1, ...]   # batch = 1
@@ -538,6 +532,10 @@ class T3(nn.Module):
             )
             # Update the kv_cache.
             past = output.past_key_values
+
+        finally:
+            if alignment_stream_analyzer is not None:
+                alignment_stream_analyzer.destroy(self.tfmr)
 
         # Concatenate all predicted tokens along the sequence dimension.
         predicted_tokens = torch.cat(predicted, dim=1)  # shape: (B, num_tokens)

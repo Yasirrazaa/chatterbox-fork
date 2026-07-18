@@ -26,6 +26,19 @@ class KVTruncatingStaticCache(StaticCache):
             value_states = value_states[:, :, :max_pos]
         return key_states, value_states
 
+    def __getitem__(self, layer_idx: int):
+        if hasattr(super(), "__getitem__"):
+            key_states, value_states = super().__getitem__(layer_idx)
+        else:
+            key_states = self.key_cache[layer_idx]
+            value_states = self.value_cache[layer_idx]
+            
+        max_pos = getattr(self, "_max_position", None)
+        if max_pos is not None:
+            key_states = key_states[:, :, :max_pos]
+            value_states = value_states[:, :, :max_pos]
+        return (key_states, value_states)
+
     def get_seq_length(self, layer_idx=0):
         max_pos = getattr(self, "_max_position", None)
         if max_pos is not None:

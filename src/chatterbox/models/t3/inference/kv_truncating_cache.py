@@ -79,3 +79,11 @@ class KVTruncatingStaticCache(StaticCache):
         if hasattr(super(), "get_max_length"):
             return super().get_max_length()
         return self.max_cache_len
+
+    def get_mask_sizes(self, *args, **kwargs):
+        max_pos = getattr(self, "_max_position", None)
+        if max_pos is not None:
+            return max_pos, 0
+        if hasattr(super(), "get_mask_sizes"):
+            return super().get_mask_sizes(*args, **kwargs)
+        return self.max_cache_len, 0

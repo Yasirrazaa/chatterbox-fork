@@ -102,9 +102,23 @@ class T3HuggingfaceBackend(LlamaPreTrainedModel, GenerationMixin):
         if max_position is not None and cache_position is not None:
             # During CUDA graph fast path, we explicitly build the attention mask.
             # Use pure tensor operations to avoid CPU sync during CUDA graph capture!
+            # We create a 4D additive mask to bypass transformers `create_causal_mask` 
+            # which has a known CUDA graph CPU-sync bug in transformers >= 5.2.0.
             seq_idx = torch.arange(max_position, device=inputs_embeds.device)
             mask_bool = seq_idx <= cache_position[-1]
-            attention_mask = mask_bool.long().unsqueeze(0).expand(inputs_embeds.shape[0], -1)
+            
+            dtype = inputs_embeds.dtype
+            min_val = torch.finfo(dtype).min
+            
+            # Create [batch_size, 1, 1, max_position] mask
+            attention_mask = torch.full(
+                (inputs_embeds.shape[0], 1, 1, max_position),
+                min_val,
+                dtype=dtype,
+                device=inputs_embeds.device
+            )
+            # Fill valid positions with 0.0
+            attention_mask.masked_fill_(mask_bool.view(1, 1, 1, max_position), 0.0)
 
         tfmr_out = self.model(
             inputs_embeds=inputs_embeds,

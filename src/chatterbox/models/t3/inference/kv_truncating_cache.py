@@ -2,6 +2,27 @@
 from transformers import StaticCache
 
 
+class LayerCacheProxy:
+    """Proxy object to trick GPT2Model into using StaticCache's in-place update."""
+    def __init__(self, cache, layer_idx):
+        self.cache = cache
+        self.layer_idx = layer_idx
+
+    def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
+        return self.cache.update(key_states, value_states, self.layer_idx, cache_kwargs)
+
+    def __iter__(self):
+        key, value = self.cache[self.layer_idx]
+        yield key
+        yield value
+
+    def __getitem__(self, idx):
+        return self.cache[self.layer_idx][idx]
+
+    def __len__(self):
+        return 2
+
+
 class KVTruncatingStaticCache(StaticCache):
     """StaticCache that truncates the returned key/value states to ``_max_position``.
 
@@ -46,6 +67,10 @@ class KVTruncatingStaticCache(StaticCache):
         if hasattr(super(), "get_seq_length"):
             return super().get_seq_length(layer_idx)
         return self.max_cache_len
+
+    def __iter__(self):
+        for layer_idx in range(len(self.key_cache)):
+            yield LayerCacheProxy(self, layer_idx)
 
     def get_max_length(self):
         max_pos = getattr(self, "_max_position", None)

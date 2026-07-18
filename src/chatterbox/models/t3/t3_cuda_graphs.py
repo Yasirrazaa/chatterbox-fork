@@ -98,7 +98,7 @@ class T3StepCUDAGraphWrapper:
         static_tensors["i_tensor"] = i_tensor.clone()
         static_tensors["batch_idx"] = batch_idx.clone()
         static_tensors["speech_pos_embedding_cache"] = (
-            speech_pos_embedding_cache.clone()
+            speech_pos_embedding_cache.clone() if speech_pos_embedding_cache is not None else None
         )
         static_tensors["generated_ids"] = generated_ids
         static_tensors["cfg_weight"] = cfg_weight
@@ -177,9 +177,10 @@ class T3StepCUDAGraphWrapper:
             static_tensors["output_logits"].copy_(output_logits)
             static_tensors["i_tensor"].copy_(i_tensor)
             static_tensors["batch_idx"].copy_(batch_idx)
-            static_tensors["speech_pos_embedding_cache"].copy_(
-                speech_pos_embedding_cache
-            )
+            if speech_pos_embedding_cache is not None:
+                static_tensors["speech_pos_embedding_cache"].copy_(
+                    speech_pos_embedding_cache
+                )
             static_tensors["generated_ids"].copy_(generated_ids)
             static_tensors["cfg_weight"] = cfg_weight
             static_tensors["temperature"] = temperature

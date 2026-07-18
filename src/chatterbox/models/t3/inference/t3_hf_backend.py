@@ -101,14 +101,10 @@ class T3HuggingfaceBackend(LlamaPreTrainedModel, GenerationMixin):
         attention_mask = None
         if max_position is not None and cache_position is not None:
             # During CUDA graph fast path, we explicitly build the attention mask.
-            # This prevents older models (like GPT2) from incorrectly building a mask
-            # using the full max_cache_len instead of the bucketed max_position.
-            attention_mask = torch.zeros(
-                (inputs_embeds.shape[0], max_position),
-                device=inputs_embeds.device,
-                dtype=torch.long
-            )
-            attention_mask[:, :cache_position[-1] + 1] = 1
+            # Use pure tensor operations to avoid CPU sync during CUDA graph capture!
+            seq_idx = torch.arange(max_position, device=inputs_embeds.device)
+            mask_bool = seq_idx <= cache_position[-1]
+            attention_mask = mask_bool.long().unsqueeze(0).expand(inputs_embeds.shape[0], -1)
 
         tfmr_out = self.model(
             inputs_embeds=inputs_embeds,

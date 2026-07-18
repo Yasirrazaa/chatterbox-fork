@@ -196,24 +196,43 @@ with gr.Blocks(title="Chatterbox Studio") as demo:
                     with gr.Accordion("Pipeline Settings", open=False):
                         long_cands = gr.Slider(1, 5, value=1, step=1, label="Whisper Candidates (Requires faster-whisper)")
                         long_batch = gr.Checkbox(value=True, label="Enable Chunking")
+                        long_use_fast = gr.Checkbox(value=False, label="Use Fast Inference (CUDA Graphs)")
+                        
+                    with gr.Accordion("Generation Parameters", open=False):
+                        long_exagg = gr.Slider(0.0, 2.0, value=0.0, label="Exaggeration")
+                        long_cfg = gr.Slider(0.0, 1.0, value=0.5, label="CFG Weight (Base/MTL only)")
+                        long_temp = gr.Slider(0.1, 2.0, value=0.8, label="Temperature")
+                        long_rep = gr.Slider(1.0, 2.0, value=1.2, label="Repetition Penalty")
+                        long_seed = gr.Number(value=0, label="Random Seed (0 for random)")
                         
                     long_btn = gr.Button("Generate Full Audio", variant="primary")
                     
                 with gr.Column():
                     long_out = gr.Audio(label="Output")
                     
-            def _gen_long(mtype, text, ref, cands, batch):
+            def _gen_long(mtype, text, ref, cands, batch, use_fast, exagg, cfg, temp, rep, seed):
                 free_vram()
                 pipe = get_pipeline(mtype)
-                wav = pipe.generate(
-                    text,
-                    audio_prompt_path=ref,
-                    num_candidates=cands,
-                    sentence_split=batch,
-                )
+                set_seed(int(seed))
+                
+                kwargs = {
+                    "audio_prompt_path": ref,
+                    "num_candidates": cands,
+                    "sentence_split": batch,
+                    "exaggeration": exagg,
+                    "cfg_weight": cfg,
+                    "temperature": temp,
+                    "repetition_penalty": rep
+                }
+                
+                if use_fast:
+                    wav = pipe.generate_fast(text, **kwargs)
+                else:
+                    wav = pipe.generate(text, **kwargs)
+                    
                 return (pipe.sr, wav.squeeze(0).numpy())
 
-            long_btn.click(_gen_long, [long_model, long_text, long_ref, long_cands, long_batch], long_out)
+            long_btn.click(_gen_long, [long_model, long_text, long_ref, long_cands, long_batch, long_use_fast, long_exagg, long_cfg, long_temp, long_rep, long_seed], long_out)
 
         # --- TAB 5: VOICE CONVERSION ---
         with gr.Tab("🔄 Voice Conversion"):

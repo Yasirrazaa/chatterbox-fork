@@ -98,9 +98,22 @@ class T3HuggingfaceBackend(LlamaPreTrainedModel, GenerationMixin):
         if past_key_values is not None and not isinstance(past_key_values, tuple):
             past_key_values._max_position = max_position
 
+        attention_mask = None
+        if max_position is not None and cache_position is not None:
+            # During CUDA graph fast path, we explicitly build the attention mask.
+            # This prevents older models (like GPT2) from incorrectly building a mask
+            # using the full max_cache_len instead of the bucketed max_position.
+            attention_mask = torch.zeros(
+                (inputs_embeds.shape[0], max_position),
+                device=inputs_embeds.device,
+                dtype=torch.long
+            )
+            attention_mask[:, :cache_position[-1] + 1] = 1
+
         tfmr_out = self.model(
             inputs_embeds=inputs_embeds,
             past_key_values=past_key_values,
+            attention_mask=attention_mask,
             use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,

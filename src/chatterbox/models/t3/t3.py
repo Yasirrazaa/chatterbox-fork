@@ -461,77 +461,78 @@ class T3(nn.Module):
         try:
             output = patched_model(
                 inputs_embeds=inputs_embeds,
-            past_key_values=None,
-            use_cache=True,
-            output_attentions=True,
-            output_hidden_states=True,
-            return_dict=True,
-        )
-        # Initialize kv_cache with the full context.
-        past = output.past_key_values
-
-        # ---- Generation Loop using kv_cache ----
-        for i in tqdm(range(max_new_tokens), desc="Sampling", dynamic_ncols=True):
-            logits_step = output.logits[:, -1, :]
-            if logits_step.size(0) == 2:
-                # CFG combine  → (1, V)
-                cond   = logits_step[0:1, :]
-                uncond = logits_step[1:2, :]
-                cfg = torch.as_tensor(cfg_weight, device=cond.device, dtype=cond.dtype)
-                logits = cond + cfg * (cond - uncond)
-            else:
-                logits = logits_step[0:1, :]
-            
-            # Apply alignment stream analyzer integrity checks
-            if patched_model.alignment_stream_analyzer is not None:
-                if logits.dim() == 1:            # guard in case something upstream squeezed
-                    logits = logits.unsqueeze(0) # (1, V)
-                # Pass the last generated token for repetition tracking
-                last_token = generated_ids[0, -1].item() if len(generated_ids[0]) > 0 else None
-                logits = patched_model.alignment_stream_analyzer.step(logits, next_token=last_token)  # (1, V)
-
-            # Apply repetition penalty
-            ids_for_proc = generated_ids[:1, ...]   # batch = 1
-            logits = self.repetition_penalty_processor(ids_for_proc, logits)  # expects (B,V)
-            
-            # Apply temperature scaling.
-            if temperature != 1.0:
-                logits = logits / temperature
-                
-            # Apply min_p and top_p filtering
-            logits = self.min_p_warper(ids_for_proc, logits)
-            logits = self.top_p_warper(ids_for_proc, logits)
-
-            # Convert logits to probabilities and sample the next token.
-            probs = torch.softmax(logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)  # shape: (B, 1)
-
-            predicted.append(next_token)
-            generated_ids = torch.cat([generated_ids, next_token], dim=1)
-
-            # Check for EOS token.
-            if next_token.view(-1) == self.hp.stop_speech_token:
-                logger.info(f"✅ EOS token detected! Stopping generation at step {i+1}")
-                break
-
-            # Get embedding for the new token.
-            next_token_embed = self.speech_emb(next_token)
-            if self.speech_pos_emb is not None:
-                next_token_embed = next_token_embed + self.speech_pos_emb.get_fixed_embedding(i + 1)
-
-            # Expand to match batch size
-            next_token_embed = next_token_embed.expand(embeds.size(0), -1, -1)
-
-            # Forward pass with only the new token and the cached past.
-            output = self.patched_model(
-                inputs_embeds=next_token_embed,
-                past_key_values=past,
+                past_key_values=None,
+                use_cache=True,
                 output_attentions=True,
                 output_hidden_states=True,
                 return_dict=True,
             )
-            # Update the kv_cache.
+            # Initialize kv_cache with the full context.
             past = output.past_key_values
+
+            # ---- Generation Loop using kv_cache ----
+            for i in tqdm(range(max_new_tokens), desc="Sampling", dynamic_ncols=True):
+                logits_step = output.logits[:, -1, :]
+                if logits_step.size(0) == 2:
+                    # CFG combine  → (1, V)
+                    cond   = logits_step[0:1, :]
+                    uncond = logits_step[1:2, :]
+                    cfg = torch.as_tensor(cfg_weight, device=cond.device, dtype=cond.dtype)
+                    logits = cond + cfg * (cond - uncond)
+                else:
+                    logits = logits_step[0:1, :]
+                
+                # Apply alignment stream analyzer integrity checks
+                if patched_model.alignment_stream_analyzer is not None:
+                    if logits.dim() == 1:            # guard in case something upstream squeezed
+                        logits = logits.unsqueeze(0) # (1, V)
+                    # Pass the last generated token for repetition tracking
+                    last_token = generated_ids[0, -1].item() if len(generated_ids[0]) > 0 else None
+                    logits = patched_model.alignment_stream_analyzer.step(logits, next_token=last_token)  # (1, V)
+
+                # Apply repetition penalty
+                ids_for_proc = generated_ids[:1, ...]   # batch = 1
+                logits = self.repetition_penalty_processor(ids_for_proc, logits)  # expects (B,V)
+                
+                # Apply temperature scaling.
+                if temperature != 1.0:
+                    logits = logits / temperature
+                    
+                # Apply min_p and top_p filtering
+                logits = self.min_p_warper(ids_for_proc, logits)
+                logits = self.top_p_warper(ids_for_proc, logits)
+
+                # Convert logits to probabilities and sample the next token.
+                probs = torch.softmax(logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)  # shape: (B, 1)
+
+                predicted.append(next_token)
+                generated_ids = torch.cat([generated_ids, next_token], dim=1)
+
+                # Check for EOS token.
+                if next_token.view(-1) == self.hp.stop_speech_token:
+                    logger.info(f"✅ EOS token detected! Stopping generation at step {i+1}")
+                    break
+
+                # Get embedding for the new token.
+                next_token_embed = self.speech_emb(next_token)
+                if self.speech_pos_emb is not None:
+                    next_token_embed = next_token_embed + self.speech_pos_emb.get_fixed_embedding(i + 1)
+
+                # Expand to match batch size
+                next_token_embed = next_token_embed.expand(embeds.size(0), -1, -1)
+
+                # Forward pass with only the new token and the cached past.
+                output = patched_model(
+                    inputs_embeds=next_token_embed,
+                    past_key_values=past,
+                    use_cache=True,
+                    output_attentions=True,
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
+                # Update the kv_cache.
+                past = output.past_key_values
 
         finally:
             if alignment_stream_analyzer is not None:

@@ -81,28 +81,39 @@ def validate_audio(
     }
 
 
+import soundfile as sf
+import tempfile
+import os
+
+_WHISPER_MODELS = {}
+
+def _get_whisper_model(backend: str, model_size: str):
+    key = (backend, model_size)
+    if key not in _WHISPER_MODELS:
+        if backend == "faster-whisper":
+            from faster_whisper import WhisperModel
+            _WHISPER_MODELS[key] = WhisperModel(model_size, device="cpu")
+        else:
+            import whisper
+            _WHISPER_MODELS[key] = whisper.load_model(model_size)
+    return _WHISPER_MODELS[key]
+
 def _transcribe(wav_np, sr, backend: str, model_size: str, language) -> Optional[str]:
     try:
-        import soundfile as sf
-        import tempfile
-        import os
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             sf.write(f.name, wav_np, sr)
             path = f.name
         try:
+            model = _get_whisper_model(backend, model_size)
             if backend == "faster-whisper":
-                from faster_whisper import WhisperModel
-                model = WhisperModel(model_size, device="cpu")
                 segs, _ = model.transcribe(path, language=language, beam_size=5)
                 text = " ".join(s.text for s in segs)
             else:
-                import whisper
-                model = whisper.load_model(model_size)
                 result = model.transcribe(path, language=language)
                 text = result["text"]
             return text.strip()
         finally:
-            os.unlink(path)
+            os.remove(path)
     except Exception as e:
-        logger.warning(f"Whisper validation unavailable ({e}); skipping.")
+        logger.warning(f"Whisper transcription failed: {e}")
         return None

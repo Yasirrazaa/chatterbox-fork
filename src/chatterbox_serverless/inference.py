@@ -20,7 +20,7 @@ from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 from chatterbox.tts import ChatterboxTTS
 from chatterbox.tts_turbo import ChatterboxTurboTTS
 from chatterbox.utils.normalizer import normalize_text as normalize_text_content
-from chatterbox.utils.splitter import split_sentences
+from chatterbox.utils.splitter import chunk_text
 from chatterbox.utils.device import resolve_device
 
 
@@ -62,12 +62,16 @@ class ChatterboxInference:
         normalize_text: bool = True,
         sentence_split: bool = True,
         inter_sentence_silence_ms: int = 100,
+        max_chunk_chars: int = 300,
+        min_chunk_chars: int = 20,
     ):
         self.model = model
         self.language = language
         self.normalize_text = normalize_text
         self.sentence_split = sentence_split
         self.inter_sentence_silence_ms = inter_sentence_silence_ms
+        self.max_chunk_chars = max_chunk_chars
+        self.min_chunk_chars = min_chunk_chars
         self.sr = getattr(model, "sr", 24000)
         self._last_audio_prompt_path: str | None = None
 
@@ -81,6 +85,8 @@ class ChatterboxInference:
         normalize_text: bool = True,
         sentence_split: bool = True,
         inter_sentence_silence_ms: int = 100,
+        max_chunk_chars: int = 300,
+        min_chunk_chars: int = 20,
     ) -> "ChatterboxInference":
         """Load a pretrained model from Hugging Face Hub or default repo.
 
@@ -104,6 +110,8 @@ class ChatterboxInference:
             normalize_text=normalize_text,
             sentence_split=sentence_split,
             inter_sentence_silence_ms=inter_sentence_silence_ms,
+            max_chunk_chars=max_chunk_chars,
+            min_chunk_chars=min_chunk_chars,
         )
 
     @classmethod
@@ -116,6 +124,8 @@ class ChatterboxInference:
         normalize_text: bool = True,
         sentence_split: bool = True,
         inter_sentence_silence_ms: int = 100,
+        max_chunk_chars: int = 300,
+        min_chunk_chars: int = 20,
     ) -> "ChatterboxInference":
         """Load a model from a local checkpoint directory."""
         model = cls._load_model_from_local(model_type=model_type, ckpt_dir=ckpt_dir, device=device)
@@ -126,6 +136,8 @@ class ChatterboxInference:
             normalize_text=normalize_text,
             sentence_split=sentence_split,
             inter_sentence_silence_ms=inter_sentence_silence_ms,
+            max_chunk_chars=max_chunk_chars,
+            min_chunk_chars=min_chunk_chars,
         )
 
     @classmethod
@@ -136,6 +148,8 @@ class ChatterboxInference:
         normalize_text: bool = True,
         sentence_split: bool = True,
         inter_sentence_silence_ms: int = 100,
+        max_chunk_chars: int = 300,
+        min_chunk_chars: int = 20,
     ) -> "ChatterboxInference":
         """Wrap an already-instantiated model."""
         return cls(
@@ -144,6 +158,8 @@ class ChatterboxInference:
             normalize_text=normalize_text,
             sentence_split=sentence_split,
             inter_sentence_silence_ms=inter_sentence_silence_ms,
+            max_chunk_chars=max_chunk_chars,
+            min_chunk_chars=min_chunk_chars,
         )
 
     @classmethod
@@ -272,7 +288,12 @@ class ChatterboxInference:
         if not use_sentence_split:
             return [processed_text]
 
-        return split_sentences(processed_text, language=language)
+        return chunk_text(
+            processed_text,
+            language=language,
+            max_chars=self.max_chunk_chars,
+            min_chars=self.min_chunk_chars,
+        )
 
     def _silence_chunk(self, inter_sentence_silence_ms: int | None = None) -> torch.Tensor | None:
         silence_ms = self.inter_sentence_silence_ms if inter_sentence_silence_ms is None else inter_sentence_silence_ms
@@ -374,34 +395,50 @@ class ChatterboxInference:
                 stacklevel=2,
             )
 
-        for index, sentence in enumerate(sentences):
-            best_chunk = None
-            best_wer = float('inf')
+        # Phase 1: Generate first candidate for all chunks sequentially
+        best_chunks = []
+        for sentence in sentences:
+            best_chunks.append(self.model.generate(sentence, **filtered_kwargs))
 
-            for _ in range(num_candidates):
-                chunk = self.model.generate(sentence, **filtered_kwargs)
-                if num_candidates == 1:
-                    best_chunk = chunk
-                    break
+        if num_candidates > 1:
+            import concurrent.futures
+            import os
+            from .validation import validate_audio
+
+            sr = getattr(self.model, "sr", 24000)
+            
+            def _validate(idx, text, chunk_tensor):
+                wav_np = chunk_tensor.squeeze().cpu().numpy()
+                res = validate_audio(wav_np, sr, text, backend="faster-whisper", language=language_id)
+                return idx, (res.get("wer", float('inf')) if res.get("status") == "ok" else float('inf'))
+
+            # Phase 2: Parallel Whisper validation
+            wers = [float('inf')] * len(sentences)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(sentences), os.cpu_count() or 4)) as pool:
+                futs = [pool.submit(_validate, i, sentences[i], best_chunks[i]) for i in range(len(sentences))]
+                for fut in concurrent.futures.as_completed(futs):
+                    idx, wer = fut.result()
+                    wers[idx] = wer
+
+            # Phase 3: Retry Queue
+            for i, sentence in enumerate(sentences):
+                best_wer = wers[i]
+                if best_wer <= getattr(self, "wer_threshold", 0.0):
+                    continue
                 
-                from .validation import validate_audio
-                sr = getattr(self.model, "sr", 24000)
-                wav_np = chunk.squeeze().cpu().numpy()
-                val_result = validate_audio(wav_np, sr, sentence, backend="faster-whisper", language=language_id)
-                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
-                
-                if wer == 0.0:
-                    best_chunk = chunk
-                    break
-                elif wer < best_wer:
-                    best_wer = wer
-                    best_chunk = chunk
+                for _ in range(1, num_candidates):
+                    chunk = self.model.generate(sentence, **filtered_kwargs)
+                    _, wer = _validate(i, sentence, chunk)
+                    if wer < best_wer:
+                        best_wer = wer
+                        best_chunks[i] = chunk
+                    if best_wer <= getattr(self, "wer_threshold", 0.0):
+                        break
 
-            if best_chunk is None:
-                best_chunk = chunk
-
-            chunks.append(best_chunk)
-            if silence is not None and index < len(sentences) - 1:
+        chunks = []
+        for index, chunk in enumerate(best_chunks):
+            chunks.append(chunk)
+            if silence is not None and index < len(best_chunks) - 1:
                 chunks.append(silence)
 
         return torch.cat(chunks, dim=-1)
@@ -461,34 +498,50 @@ class ChatterboxInference:
                 stacklevel=2,
             )
 
-        for index, sentence in enumerate(sentences):
-            best_chunk = None
-            best_wer = float('inf')
+        # Phase 1: Generate first candidate for all chunks sequentially
+        best_chunks = []
+        for sentence in sentences:
+            best_chunks.append(self.model.generate_fast(sentence, **filtered_kwargs))
 
-            for _ in range(num_candidates):
-                chunk = self.model.generate_fast(sentence, **filtered_kwargs)
-                if num_candidates == 1:
-                    best_chunk = chunk
-                    break
+        if num_candidates > 1:
+            import concurrent.futures
+            import os
+            from .validation import validate_audio
+
+            sr = getattr(self.model, "sr", 24000)
+            
+            def _validate(idx, text, chunk_tensor):
+                wav_np = chunk_tensor.squeeze().cpu().numpy()
+                res = validate_audio(wav_np, sr, text, backend="faster-whisper", language=language_id)
+                return idx, (res.get("wer", float('inf')) if res.get("status") == "ok" else float('inf'))
+
+            # Phase 2: Parallel Whisper validation
+            wers = [float('inf')] * len(sentences)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(sentences), os.cpu_count() or 4)) as pool:
+                futs = [pool.submit(_validate, i, sentences[i], best_chunks[i]) for i in range(len(sentences))]
+                for fut in concurrent.futures.as_completed(futs):
+                    idx, wer = fut.result()
+                    wers[idx] = wer
+
+            # Phase 3: Retry Queue
+            for i, sentence in enumerate(sentences):
+                best_wer = wers[i]
+                if best_wer <= getattr(self, "wer_threshold", 0.0):
+                    continue
                 
-                from .validation import validate_audio
-                sr = getattr(self.model, "sr", 24000)
-                wav_np = chunk.squeeze().cpu().numpy()
-                val_result = validate_audio(wav_np, sr, sentence, backend="faster-whisper", language=language_id)
-                wer = val_result.get("wer", 0.0) if val_result.get("status") == "ok" else 0.0
-                
-                if wer == 0.0:
-                    best_chunk = chunk
-                    break
-                elif wer < best_wer:
-                    best_wer = wer
-                    best_chunk = chunk
+                for _ in range(1, num_candidates):
+                    chunk = self.model.generate_fast(sentence, **filtered_kwargs)
+                    _, wer = _validate(i, sentence, chunk)
+                    if wer < best_wer:
+                        best_wer = wer
+                        best_chunks[i] = chunk
+                    if best_wer <= getattr(self, "wer_threshold", 0.0):
+                        break
 
-            if best_chunk is None:
-                best_chunk = chunk
-
-            chunks.append(best_chunk)
-            if silence is not None and index < len(sentences) - 1:
+        chunks = []
+        for index, chunk in enumerate(best_chunks):
+            chunks.append(chunk)
+            if silence is not None and index < len(best_chunks) - 1:
                 chunks.append(silence)
 
         return torch.cat(chunks, dim=-1)

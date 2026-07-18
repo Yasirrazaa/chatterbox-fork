@@ -65,12 +65,11 @@ class AttentionQKV(nn.Module):
 
     def setup_flash_config(self):
         # Setup flash attention configuration
-        flash_config = {
-            'enable_flash': True,
-            'enable_math': True,
-            'enable_mem_efficient': True
+        backends = torch.nn.attention.SDPBackend
+        config = {
+            'backends': [backends.FLASH_ATTENTION, backends.EFFICIENT_ATTENTION, backends.MATH]
         }
-        return flash_config
+        return config
 
     def forward(self, q, k, v, mask=None):
         q, k, v = [self.split_heads(tensor) for tensor in [q, k, v]]
@@ -91,7 +90,7 @@ class AttentionQKV(nn.Module):
 
     def flash_attention(self, q, k, v, mask=None):
         config = self.flash_config if self.flash_config else {}
-        with torch.backends.cuda.sdp_kernel(**config):
+        with torch.nn.attention.sdpa_kernel(**config):
             out = F.scaled_dot_product_attention(
                 q, k, v,
                 attn_mask=mask,

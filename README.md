@@ -143,7 +143,7 @@ AUDIO_PROMPT_PATH = "YOUR_FILE.wav"
 wav = model.generate_fast(text, audio_prompt_path=AUDIO_PROMPT_PATH)
 ta.save("test-2.wav", wav, model.sr)
 ```
-See `examples/example_tts.py` and `examples/example_vc.py` for more simple examples.
+See `examples/quickstart.py` for a consolidated file featuring examples of Turbo TTS, Standard TTS, Multilingual TTS, Voice Cloning, Voice Conversion, and Long-Form Pipeline Usage.
 
 ## Advanced Features & Optimizations
 
@@ -271,14 +271,12 @@ These evaluations were conducted under identical conditions and are publicly acc
 
 ## Gradio Web Interfaces
 
-This repository includes several ready-to-use Gradio web applications in the `examples/apps` directory:
-- **`Chatter_Extended.py`**: A highly advanced UI featuring text pre-processing, generation loops, bulk synthesis, and more.
-- **`multilingual_app.py`**: A streamlined UI for testing the Multilingual V3 model.
-- **`gradio_tts_app.py`** / **`gradio_tts_turbo_app.py`**: Standard UIs for testing the Base and Turbo models.
+This repository includes a single, highly advanced unified Gradio web application in the `examples/apps` directory:
+- **`app.py`**: A beautifully consolidated UI featuring tabs for Turbo TTS, Standard TTS, Multilingual, Voice Conversion, and Long-Form Batch Pipeline. It automatically manages VRAM using a lazy-loaded singleton pattern, preventing memory errors when switching between models.
 
-To run them locally, simply execute:
+To run the Chatterbox Studio locally, simply execute:
 ```shell
-python -m examples.apps.Chatter_Extended
+uv run examples/apps/app.py
 ```
 
 ## Cloud Deployment (RunPod Serverless)

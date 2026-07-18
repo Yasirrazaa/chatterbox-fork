@@ -45,8 +45,7 @@ RUN /app/.venv/bin/python -m pip install \
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
 COPY rp_handler.py /app/rp_handler.py
-COPY local_test.py /app/local_test.py
-COPY benchmark.py /app/benchmark.py
+COPY scripts /app/scripts
 
 RUN uv sync --python /app/.venv
 

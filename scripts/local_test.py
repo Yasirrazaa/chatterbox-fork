@@ -82,11 +82,8 @@ def main():
     ap.add_argument("--validate", action="store_true")
     args = ap.parse_args()
 
-    if args.input is None:
-        args.input = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests/serverless/test_input.json")
-    
-    if not os.path.exists(args.input):
-        print(f"Warning: Default test input not found at {args.input}")
+    if args.input and not os.path.exists(args.input):
+        print(f"Warning: Test input not found at {args.input}")
 
     job = build_job(args)
 

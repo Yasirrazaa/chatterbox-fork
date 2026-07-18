@@ -126,6 +126,8 @@ This repository comes natively equipped with a highly optimized RunPod Serverles
 
 Curious about the actual speedups? We provide a robust benchmarking suite that tests Chunking overhead, Real-Time Factor (RTF) across CUDA Graphs vs Standard, Whisper Validation latency, and Long-Text scaling.
 
+👉 **[View the full benchmark results and comparisons here](BENCHMARK.md)**
+
 We use extremely difficult texts (Alice in Wonderland, heavy acronyms/numbers) to prove the pipeline's robustness.
 
 ```shell

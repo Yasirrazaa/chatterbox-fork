@@ -78,6 +78,7 @@ class T3StepCUDAGraphWrapper:
         generated_ids: torch.Tensor,
         cfg_weight: float,
         temperature: float,
+        seq_len_tensor: torch.Tensor,
         stride_length: int,
         max_position: Optional[int] = None,
     ) -> None:
@@ -103,6 +104,7 @@ class T3StepCUDAGraphWrapper:
         static_tensors["generated_ids"] = generated_ids
         static_tensors["cfg_weight"] = cfg_weight
         static_tensors["temperature"] = temperature
+        static_tensors["seq_len_tensor"] = seq_len_tensor.clone()
         static_tensors["stride_length"] = stride_length
         static_tensors["max_position"] = bucket_key
 
@@ -118,6 +120,7 @@ class T3StepCUDAGraphWrapper:
                     static_tensors["generated_ids"],
                     static_tensors["cfg_weight"],
                     static_tensors["temperature"],
+                    static_tensors["seq_len_tensor"],
                     self.repetition_penalty_processor,
                     self.min_p_warper,
                     self.top_p_warper,
@@ -142,6 +145,7 @@ class T3StepCUDAGraphWrapper:
         generated_ids: torch.Tensor,
         cfg_weight: float,
         temperature: float,
+        seq_len_tensor: torch.Tensor,
         repetition_penalty_processor: Any = None,
         min_p_warper: Any = None,
         top_p_warper: Any = None,
@@ -166,6 +170,7 @@ class T3StepCUDAGraphWrapper:
                 generated_ids,
                 cfg_weight,
                 temperature,
+                seq_len_tensor,
                 stride_length,
                 max_position,
             )
@@ -184,6 +189,7 @@ class T3StepCUDAGraphWrapper:
             static_tensors["generated_ids"].copy_(generated_ids)
             static_tensors["cfg_weight"] = cfg_weight
             static_tensors["temperature"] = temperature
+            static_tensors["seq_len_tensor"].copy_(seq_len_tensor)
             static_tensors["stride_length"] = stride_length
             static_tensors["max_position"] = max_position
 

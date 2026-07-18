@@ -751,6 +751,8 @@ class T3(nn.Module):
         stop_token = torch.tensor(self.hp.stop_speech_token, device=self.device)
         length_hint = text_tokens.shape[1] * 2
 
+        seq_len_tensor = torch.tensor([seq_len], dtype=torch.long, device=self.device)
+
         for i in tqdm(range(max_new_tokens), desc="Sampling (fast)", dynamic_ncols=True):
             i_tensor = indices[i]
             torch.compiler.cudagraph_mark_step_begin()
@@ -764,6 +766,7 @@ class T3(nn.Module):
                 generated_ids,
                 cfg_weight,
                 temperature,
+                seq_len_tensor,
                 stride_length=1,
                 max_position=max_position,
             )
@@ -805,6 +808,7 @@ def _fast_generate_t3_token(
     generated_ids,
     cfg_weight,
     temperature,
+    seq_len_tensor,
     repetition_penalty_processor,
     min_p_warper,
     top_p_warper,
@@ -836,13 +840,14 @@ def _fast_generate_t3_token(
     if cfg_weight > 0.0:
         next_token_embed = torch.cat([next_token_embed, next_token_embed])
 
-    # Create 1D tensor [seq_len] purely on GPU to avoid Host-to-Device sync during graph capture
-    seq_len_val = kv_cache.get_seq_length()
+    # Construct cache_position natively on GPU: current_pos = initial_prompt_len + current_step - 1
+    # i_tensor starts at 1, so i_tensor - 1 + seq_len_tensor gives the exact cache position.
+    cache_position = seq_len_tensor + i_tensor - 1
     
     out = patched_model(
         inputs_embeds=next_token_embed,
         past_key_values=kv_cache,
-        cache_position=torch.arange(seq_len_val, seq_len_val + 1, device=next_token_embed.device),
+        cache_position=cache_position,
         max_position=max_position,
         output_hidden_states=False,
         output_attentions=False,

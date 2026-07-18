@@ -124,7 +124,9 @@ def benchmark_whisper_validation():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipeline = ChatterboxInference.from_pretrained(model_type="turbo", device=device)
     
-    tricky_text = "In 1999, Dr. J.R.R. Tolkien's friend, Mr. O'Connor, paid $4,592.33 for a bizarre, antique artifact... wasn't it?"
+    tricky_text_path = Path(__file__).parent / "data" / "tricky_text.txt"
+    with open(tricky_text_path, "r", encoding="utf-8") as f:
+        tricky_text = f.read().strip()
     
     console.print("Warming up Whisper model...")
     _ = pipeline.generate_fast("Warmup", num_candidates=1)
@@ -169,8 +171,11 @@ def benchmark_long_text():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipeline = ChatterboxInference.from_pretrained(model_type="turbo", device=device)
     
-    base_text = "This is a sentence. "
-    sizes = [1, 5, 10, 20]
+    long_text_path = Path(__file__).parent / "data" / "long_text.txt"
+    with open(long_text_path, "r", encoding="utf-8") as f:
+        base_text = f.read().strip()
+        
+    sizes = [1, 2, 4]
     
     table = Table(title="Long Text Generation RTF")
     table.add_column("Number of Sentences", justify="right", style="cyan")

@@ -62,7 +62,7 @@ def initialize_model(
     normalize_text: bool = True,
     sentence_split: bool = True,
     inter_sentence_silence_ms: int = 100,
-    use_fast: bool = False,
+    use_fast: bool = True,
     compile_dtype: str | None = None,
     repo_id: str | None = None,
 ):

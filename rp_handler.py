@@ -110,12 +110,16 @@ def initialize_model(
 
         compiled = False
         if use_fast:
-            compiled = inference_model.compile(dtype=compile_dtype)
+            if compile_dtype is None and device == "cuda":
+                compile_dtype = "bfloat16" if torch.cuda.is_bf16_supported() else "float32"
+            
+            # Use 560 max_cache_len for optimal speed as benchmarked
+            compiled = inference_model.compile(dtype=compile_dtype, max_cache_len=560)
             if not compiled:
                 logger.warning("use_fast requested but model lacks compile hook; "
                                "generation will run at standard speed.")
             else:
-                logger.info(f"Fast path compiled (dtype={compile_dtype or 'default'}).")
+                logger.info(f"Fast path compiled (dtype={compile_dtype or 'default'}, max_cache_len=560).")
 
         logger.info(f"Model loaded on {device} | sr={inference_model.sr} | "
                      f"variant={type(inference_model.model).__name__} | "

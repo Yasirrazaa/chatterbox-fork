@@ -48,6 +48,10 @@ def get_pipeline(model_type: str):
                 _models[model_type] = ChatterboxVC.from_pretrained(device=DEVICE)
             else:
                 _models[model_type] = ChatterboxInference.from_pretrained(model_type=model_type, device=DEVICE)
+                if DEVICE == "cuda":
+                    dt = "bfloat16" if torch.cuda.is_bf16_supported() else "float32"
+                    _models[model_type].compile(dtype=dt, max_cache_len=560)
+                    print(f"Pre-compiled {model_type} with dtype={dt} and max_cache_len=560")
         return _models[model_type]
 
 def set_seed(seed: int):

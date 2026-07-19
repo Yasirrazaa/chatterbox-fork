@@ -10,9 +10,9 @@ Whether you're running it locally through our custom Gradio Studio or deploying 
 
 ## 🌟 Why Use This Fork? (Key Features)
 
-### 1. ⚡ 4x Faster Inference via Bucketed CUDA Graphs
+### 1. ⚡ 1.8x Faster Inference via Bucketed CUDA Graphs
 Autoregressive TTS models are notoriously CPU-bound for non-batched inference (e.g., real-time voice agents). We solved this by integrating **Bucketed CUDA Graphs**.
-* **Result:** **2x - 4x speedup** on batch-size 1 requests by pre-compiling the entire generation loop into static CUDA graphs and completely bypassing PyTorch CPU overhead.
+* **Result:** **~1.8x speedup** on batch-size 1 requests by pre-compiling the entire generation loop into static CUDA graphs and completely bypassing PyTorch CPU overhead (RTF dropped from 0.59 to 0.32).
 
 ### 2. 🛡️ Zero-Hallucination Pipeline (Whisper Validation)
 TTS models occasionally hallucinate on tricky names or weird punctuation. We built an advanced pipeline to natively solve this.

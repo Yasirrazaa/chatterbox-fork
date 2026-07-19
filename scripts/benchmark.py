@@ -123,6 +123,77 @@ def benchmark_fast_vs_normal():
         del model
         torch.cuda.empty_cache()
 
+def benchmark_reddit_optimizations():
+    console.rule("[bold cyan]Benchmarking: rsxdalv's Reddit Optimizations (bfloat16 & max_cache_len)[/bold cyan]")
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        console.print("[yellow]Skipping CUDA optimizations benchmark on CPU.[/yellow]")
+        return
+        
+    console.print("Loading model for optimization tests...")
+    text = "Alright, imagine you have a plant that lives in the desert where there isn't a lot of water. This plant, called a cactus, has a special body that can store water so it can survive without rain for a long time."
+    
+    configs = [
+        {"name": "Float32 Normal", "use_fast": False, "dtype": "float32", "max_cache_len": 1000},
+        {"name": "Float32 Fast (CUDA Graphs)", "use_fast": True, "dtype": "float32", "max_cache_len": 1000},
+        {"name": "Float32 Fast (Max_Cache_Len 560)", "use_fast": True, "dtype": "float32", "max_cache_len": 560},
+        {"name": "Bfloat16 Normal", "use_fast": False, "dtype": "bfloat16", "max_cache_len": 1000},
+        {"name": "Bfloat16 Fast (CUDA Graphs)", "use_fast": True, "dtype": "bfloat16", "max_cache_len": 1000},
+        {"name": "Bfloat16 Fast (Max_Cache_Len 560)", "use_fast": True, "dtype": "bfloat16", "max_cache_len": 560},
+    ]
+    
+    table = Table(title="Optimization Matrix (Bfloat16 & Cache Tuning)")
+    table.add_column("Configuration", style="cyan")
+    table.add_column("Generation Time (s)", justify="right", style="magenta")
+    table.add_column("RTF (lower is better)", justify="right", style="yellow")
+    
+    pipeline = ChatterboxInference.from_pretrained(model_type="turbo", device=device)
+    
+    for config in configs:
+        console.print(f"Testing {config['name']}...")
+        
+        # Apply compilation parameters
+        dt = config["dtype"]
+        c_len = config["max_cache_len"]
+        
+        # Clear VRAM to avoid OOM
+        torch.cuda.empty_cache()
+        
+        # Apply dtype cast
+        dt_obj = getattr(torch, dt)
+        pipeline.model.t3.to(dtype=dt_obj)
+        if hasattr(pipeline.model, "conds") and pipeline.model.conds is not None:
+            pipeline.model.conds.t3.to(dtype=dt_obj)
+            
+        # Apply cache length
+        if hasattr(pipeline.model.t3, "max_cache_len"):
+            pipeline.model.t3.max_cache_len = c_len
+            
+        times = []
+        rtfs = []
+        
+        # Warmup
+        _ = pipeline.generate_fast("Warmup", num_candidates=1) if config["use_fast"] else pipeline.generate("Warmup")
+        
+        for _ in range(NUM_RUNS):
+            start = time.perf_counter()
+            if config["use_fast"]:
+                wav = pipeline.generate_fast(text, num_candidates=1)
+            else:
+                wav = pipeline.generate(text)
+            t = time.perf_counter() - start
+            times.append(t)
+            audio_dur = wav.shape[1] / pipeline.model.sr
+            rtfs.append(t / audio_dur)
+        
+        table.add_row(config["name"], format_runs(times), format_runs(rtfs))
+        
+    console.print(table)
+    
+    del pipeline
+    torch.cuda.empty_cache()
+
 def benchmark_whisper_validation():
     console.rule("[bold blue]Benchmarking: Without vs With Whisper Validation[/bold blue]")
     
